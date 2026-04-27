@@ -128,6 +128,44 @@ CREATE INDEX idx_orders_cust_date ON orders (customer_id, order_date);
 -- ❌ Does NOT work for: WHERE order_date > '2024-01-01' (alone)
 ```
 
+### B-Tree vs B+ Tree
+
+In interviews, people sometimes say **B-Tree** and **B+ Tree** interchangeably, but they are not exactly the same.
+
+Also, **B-Tree** is the correct term. If someone says **B- Tree**, they usually mean B-Tree, not "B minus tree".
+
+| Aspect | B-Tree | B+ Tree |
+|---|---|---|
+| Data placement | Keys and row pointers/data can be stored in internal nodes and leaf nodes. | Internal nodes store only routing keys; actual row pointers/data live in leaf nodes. |
+| Internal nodes | Can contain searchable data. | Used only to guide the search path. |
+| Leaf nodes | May or may not be linked. | Usually linked together for fast ordered scans. |
+| Equality lookup | Fast O(log N). | Fast O(log N). |
+| Range queries | Good, but scanning may require more tree traversal. | Excellent because linked leaves can be scanned sequentially. |
+| Fan-out | Lower if internal nodes store more payload. | Higher because internal nodes are compact. |
+| Tree height | Balanced and short. | Often shorter/wider for the same data volume. |
+| Common database use | Conceptually important and used in some systems. | Very common for relational database indexes. |
+
+**Why databases often prefer B+ trees:**
+
+- Internal nodes are small, so more routing keys fit in each page.
+- The tree has high fan-out, so fewer page reads are needed.
+- All records/pointers are at the leaf level, giving predictable lookup paths.
+- Linked leaves make range scans efficient.
+
+Example range query:
+
+```sql
+SELECT *
+FROM orders
+WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31';
+```
+
+With a B+ tree on `order_date`, the database navigates to the first matching leaf page and then walks the linked leaf pages until the end of the range.
+
+**Interview summary:**
+
+> A B-Tree is a balanced multi-way search tree. A B+ Tree is a database-friendly variant where internal nodes only route searches and all row pointers/data are stored in linked leaf nodes. B+ Trees are especially strong for range queries, which is why they are widely used for relational database indexes.
+
 ### Hash Index
 
 A hash index uses a hash function to map keys directly to storage locations — giving **O(1) average-case lookups** but **no support for range queries** or ordering. It's like a dictionary/hashmap on disk.
