@@ -2,56 +2,133 @@
 
 ## Table of Contents
 
-- [How to Read This Guide](#how-to-read-this-guide)
-- [What System Design Really Means](#what-system-design-really-means)
-- [The System Design Mindset](#the-system-design-mindset)
-- [Functional vs Non-Functional Requirements](#functional-vs-non-functional-requirements)
-- [Latency, Throughput, and Tail Latency](#latency-throughput-and-tail-latency)
-- [Scalability](#scalability)
-- [Availability and Reliability](#availability-and-reliability)
-- [Fault Tolerance](#fault-tolerance)
-- [Client-Server Architecture](#client-server-architecture)
-- [DNS](#dns)
-- [CDN and Edge](#cdn-and-edge)
-- [Load Balancing](#load-balancing)
-- [APIs](#apis)
-- [Stateless and Stateful Services](#stateless-and-stateful-services)
-- [Synchronous and Asynchronous Processing](#synchronous-and-asynchronous-processing)
-- [Databases](#databases)
-- [Data Modeling and Access Patterns](#data-modeling-and-access-patterns)
-- [Indexes](#indexes)
-- [Transactions](#transactions)
-- [Consistency](#consistency)
-- [CAP and PACELC](#cap-and-pacelc)
-- [Replication](#replication)
-- [Partitioning and Sharding](#partitioning-and-sharding)
-- [Caching](#caching)
-- [Queues and Streams](#queues-and-streams)
-- [Idempotency and Retries](#idempotency-and-retries)
-- [Rate Limiting](#rate-limiting)
-- [Backpressure and Load Shedding](#backpressure-and-load-shedding)
-- [Search Systems](#search-systems)
-- [File and Media Storage](#file-and-media-storage)
-- [Real-Time Systems](#real-time-systems)
-- [Feed and Timeline Systems](#feed-and-timeline-systems)
-- [Notification Systems](#notification-systems)
-- [Payment and Ledger Systems](#payment-and-ledger-systems)
-- [Location-Based Systems](#location-based-systems)
-- [Microservices](#microservices)
-- [Service Discovery and API Gateway](#service-discovery-and-api-gateway)
-- [Distributed Transactions and Sagas](#distributed-transactions-and-sagas)
-- [Outbox Pattern and CDC](#outbox-pattern-and-cdc)
-- [Consensus and Coordination](#consensus-and-coordination)
-- [Distributed Locks and Fencing Tokens](#distributed-locks-and-fencing-tokens)
-- [Ordering, Clocks, and Time](#ordering-clocks-and-time)
-- [Observability](#observability)
-- [Security and Privacy](#security-and-privacy)
-- [Multi-Region Design](#multi-region-design)
-- [Disaster Recovery](#disaster-recovery)
-- [Capacity Planning](#capacity-planning)
-- [Cost-Aware Design](#cost-aware-design)
-- [Common Tradeoff Patterns](#common-tradeoff-patterns)
-- [How to Think in Interviews](#how-to-think-in-interviews)
+- [System Design Concepts - Basic to Advanced](#system-design-concepts---basic-to-advanced)
+  - [Table of Contents](#table-of-contents)
+  - [How to Read This Guide](#how-to-read-this-guide)
+  - [What System Design Really Means](#what-system-design-really-means)
+  - [The System Design Mindset](#the-system-design-mindset)
+  - [Functional vs Non-Functional Requirements](#functional-vs-non-functional-requirements)
+  - [Latency, Throughput, and Tail Latency](#latency-throughput-and-tail-latency)
+    - [Average Latency](#average-latency)
+    - [Percentiles](#percentiles)
+  - [Scalability](#scalability)
+    - [Vertical Scaling](#vertical-scaling)
+    - [Horizontal Scaling](#horizontal-scaling)
+    - [Scaling Compute vs Scaling Data](#scaling-compute-vs-scaling-data)
+  - [Availability and Reliability](#availability-and-reliability)
+  - [Fault Tolerance](#fault-tolerance)
+    - [Timeout](#timeout)
+    - [Retry](#retry)
+    - [Circuit Breaker](#circuit-breaker)
+    - [Bulkhead](#bulkhead)
+    - [Graceful Degradation](#graceful-degradation)
+  - [Client-Server Architecture](#client-server-architecture)
+  - [DNS](#dns)
+  - [CDN and Edge](#cdn-and-edge)
+    - [Edge Computing](#edge-computing)
+  - [Load Balancing](#load-balancing)
+    - [L4 vs L7 Load Balancing](#l4-vs-l7-load-balancing)
+    - [Algorithms](#algorithms)
+    - [Health Checks](#health-checks)
+  - [APIs](#apis)
+    - [REST](#rest)
+    - [gRPC](#grpc)
+    - [GraphQL](#graphql)
+      - [Risk 1: N+1 Backend Calls](#risk-1-n1-backend-calls)
+      - [Risk 2: Query Complexity Attacks](#risk-2-query-complexity-attacks)
+      - [Risk 3: Harder Caching](#risk-3-harder-caching)
+      - [Risk 4: Authorization Complexity](#risk-4-authorization-complexity)
+    - [Pagination](#pagination)
+  - [Stateless and Stateful Services](#stateless-and-stateful-services)
+  - [Synchronous and Asynchronous Processing](#synchronous-and-asynchronous-processing)
+  - [Databases](#databases)
+    - [Relational Databases](#relational-databases)
+    - [NoSQL Databases](#nosql-databases)
+    - [Database Selection Examples](#database-selection-examples)
+  - [Data Modeling and Access Patterns](#data-modeling-and-access-patterns)
+  - [Indexes](#indexes)
+    - [Common Index Types](#common-index-types)
+    - [Index Tradeoffs](#index-tradeoffs)
+  - [Transactions](#transactions)
+  - [Consistency](#consistency)
+    - [Strong Consistency](#strong-consistency)
+    - [Eventual Consistency](#eventual-consistency)
+    - [Read-Your-Writes](#read-your-writes)
+    - [Monotonic Reads](#monotonic-reads)
+    - [Causal Consistency](#causal-consistency)
+  - [CAP and PACELC](#cap-and-pacelc)
+  - [Replication](#replication)
+    - [Leader-Follower Replication](#leader-follower-replication)
+    - [Multi-Leader Replication](#multi-leader-replication)
+    - [Leaderless Replication](#leaderless-replication)
+  - [Partitioning and Sharding](#partitioning-and-sharding)
+    - [Hash-Based Sharding](#hash-based-sharding)
+    - [Range-Based Sharding](#range-based-sharding)
+    - [Geo Sharding](#geo-sharding)
+    - [Hot Partitions](#hot-partitions)
+  - [Caching](#caching)
+    - [Cache-Aside](#cache-aside)
+    - [Write-Through](#write-through)
+    - [Write-Behind](#write-behind)
+    - [Cache Invalidation](#cache-invalidation)
+    - [Common Cache Problems](#common-cache-problems)
+  - [Queues and Streams](#queues-and-streams)
+    - [Queue](#queue)
+    - [Stream](#stream)
+    - [Delivery Semantics](#delivery-semantics)
+  - [Idempotency and Retries](#idempotency-and-retries)
+  - [Rate Limiting](#rate-limiting)
+    - [Common Rate Limiting Algorithms Explained](#common-rate-limiting-algorithms-explained)
+    - [1. Fixed Window Counter](#1-fixed-window-counter)
+    - [2. Sliding Window Log](#2-sliding-window-log)
+    - [3. Sliding Window Counter](#3-sliding-window-counter)
+      - [Why This Is Better Than Fixed Window](#why-this-is-better-than-fixed-window)
+      - [Simple Mental Picture](#simple-mental-picture)
+      - [Another Example](#another-example)
+    - [4. Token Bucket](#4-token-bucket)
+    - [5. Leaky Bucket](#5-leaky-bucket)
+    - [Token Bucket vs Leaky Bucket](#token-bucket-vs-leaky-bucket)
+    - [Which Algorithm Should You Choose?](#which-algorithm-should-you-choose)
+  - [Backpressure and Load Shedding](#backpressure-and-load-shedding)
+  - [Search Systems](#search-systems)
+    - [Inverted Index](#inverted-index)
+    - [Ranking Signals](#ranking-signals)
+    - [Freshness](#freshness)
+  - [File and Media Storage](#file-and-media-storage)
+  - [Real-Time Systems](#real-time-systems)
+  - [Feed and Timeline Systems](#feed-and-timeline-systems)
+    - [Fanout on Write](#fanout-on-write)
+    - [Fanout on Read](#fanout-on-read)
+    - [Hybrid Fanout](#hybrid-fanout)
+  - [Notification Systems](#notification-systems)
+  - [Payment and Ledger Systems](#payment-and-ledger-systems)
+  - [Location-Based Systems](#location-based-systems)
+    - [Latitude and Longitude](#latitude-and-longitude)
+    - [Geohash](#geohash)
+    - [S2 Cells](#s2-cells)
+    - [H3 Hexagons](#h3-hexagons)
+    - [Quadtrees](#quadtrees)
+    - [Nearby Search](#nearby-search)
+    - [Location Freshness](#location-freshness)
+    - [Matching](#matching)
+  - [Microservices](#microservices)
+  - [Service Discovery and API Gateway](#service-discovery-and-api-gateway)
+  - [Distributed Transactions and Sagas](#distributed-transactions-and-sagas)
+    - [Saga](#saga)
+  - [Outbox Pattern and CDC](#outbox-pattern-and-cdc)
+  - [Consensus and Coordination](#consensus-and-coordination)
+  - [Distributed Locks and Fencing Tokens](#distributed-locks-and-fencing-tokens)
+  - [Ordering, Clocks, and Time](#ordering-clocks-and-time)
+  - [Observability](#observability)
+  - [Security and Privacy](#security-and-privacy)
+  - [Multi-Region Design](#multi-region-design)
+    - [Active-Passive](#active-passive)
+    - [Active-Active](#active-active)
+  - [Disaster Recovery](#disaster-recovery)
+  - [Capacity Planning](#capacity-planning)
+  - [Cost-Aware Design](#cost-aware-design)
+  - [Common Tradeoff Patterns](#common-tradeoff-patterns)
+  - [How to Think in Interviews](#how-to-think-in-interviews)
 
 ---
 
@@ -1580,6 +1657,420 @@ Common algorithms:
 | Token bucket | Tokens refill over time. Allows bursts. |
 | Leaky bucket | Requests drain at fixed rate. Smooths traffic. |
 
+### Common Rate Limiting Algorithms Explained
+
+Rate limiting algorithms decide two things:
+
+- How requests are counted.
+- When a request should be allowed or rejected.
+
+Assume the rule is:
+
+```text
+Allow 100 requests per user per minute
+```
+
+Different algorithms enforce this rule differently.
+
+### 1. Fixed Window Counter
+
+Fixed window counts requests in fixed time buckets.
+
+Example:
+
+```text
+10:00:00 - 10:00:59 -> allow up to 100 requests
+10:01:00 - 10:01:59 -> allow up to 100 requests
+```
+
+Simple implementation idea:
+
+```text
+key = user_id + current_minute
+increment counter
+if counter > limit, reject request
+```
+
+Example:
+
+```text
+User sends 100 requests at 10:00:59
+User sends 100 requests at 10:01:00
+```
+
+Technically the user stayed within each minute's limit, but they sent 200 requests in 2 seconds. This is the **boundary burst problem**.
+
+Pros:
+
+- Very simple.
+- Fast.
+- Easy to store in Redis or memory.
+- Good for basic API protection.
+
+Cons:
+
+- Bursty at window boundaries.
+- Not smooth.
+- Can allow more traffic than expected around boundaries.
+
+Use when:
+
+- Simplicity matters more than precision.
+- Small bursts are acceptable.
+- You need an easy first version.
+
+Interview mental model:
+
+> Fixed window is simple, but users can burst at the boundary between two windows.
+
+### 2. Sliding Window Log
+
+Sliding window log stores timestamps of recent requests.
+
+For every request:
+
+1. Remove timestamps older than the window.
+2. Count remaining timestamps.
+3. If count is below limit, allow request and store current timestamp.
+4. Otherwise, reject.
+
+Example rule:
+
+```text
+Allow 100 requests in the last 60 seconds
+```
+
+If current time is `10:01:30`, check requests from:
+
+```text
+10:00:30 - 10:01:30
+```
+
+This avoids the fixed-window boundary burst because the window moves continuously.
+
+Pros:
+
+- Accurate.
+- Prevents boundary burst problem.
+- Easy to reason about.
+
+Cons:
+
+- Memory-heavy because every request timestamp may be stored.
+- Expensive for high-traffic users.
+- Cleanup of old timestamps is required.
+
+Use when:
+
+- Accuracy matters.
+- Request volume per identity is not extremely high.
+- You need exact rolling-window behavior.
+
+Interview mental model:
+
+> Sliding window log is accurate but stores too much data at high scale.
+
+### 3. Sliding Window Counter
+
+Sliding window counter is a memory-efficient approximation of the sliding window log.
+
+The problem with sliding window log is that it stores every request timestamp. Sliding window counter avoids that by storing only two numbers:
+
+- Request count in the current fixed window.
+- Request count in the previous fixed window.
+
+Then it estimates how much of the previous window should still count.
+
+Example rule:
+
+```text
+Allow 100 requests in the last 60 seconds
+```
+
+Suppose the current time is:
+
+```text
+10:01:15
+```
+
+The real sliding window is the last 60 seconds:
+
+```text
+10:00:15 - 10:01:15
+```
+
+That real window overlaps with:
+
+```text
+Previous fixed window: 10:00:00 - 10:00:59
+Current fixed window:  10:01:00 - 10:01:59
+```
+
+At `10:01:15`, only 15 seconds of the current minute have passed. That means the last 60 seconds includes:
+
+```text
+45 seconds from previous window: 10:00:15 - 10:00:59
+15 seconds from current window:  10:01:00 - 10:01:15
+```
+
+So we count:
+
+- All requests in the current window so far.
+- Only part of the previous window's requests.
+
+Since 45 out of 60 seconds from the previous window still overlap, we count about 75% of the previous window.
+
+Approximate count:
+
+```text
+effective_count = current_window_count + previous_window_count * previous_window_weight
+```
+
+Example:
+
+```text
+current_window_count = 30
+previous_window_count = 80
+previous_window_weight = 45 / 60 = 0.75
+
+effective_count = 30 + 80 * 0.75 = 90
+```
+
+Since 90 is below 100, allow the request.
+
+If the effective count were above 100, reject the request.
+
+#### Why This Is Better Than Fixed Window
+
+Fixed window can allow a big burst around the minute boundary:
+
+```text
+100 requests at 10:00:59
+100 requests at 10:01:00
+```
+
+Sliding window counter smooths this by saying:
+
+> We are just inside the new minute, so most of the previous minute should still count.
+
+That means the second burst is more likely to be rejected.
+
+#### Simple Mental Picture
+
+Imagine a 60-second ruler sliding across time:
+
+```text
+Real window: [10:00:15 ---------------------- 10:01:15]
+
+Previous minute: [10:00:00 -------- 10:00:59]
+Current minute:                         [10:01:00 -------- 10:01:59]
+```
+
+The ruler covers part of the previous minute and part of the current minute. Sliding window counter estimates the request count by weighting the covered part of the previous minute.
+
+#### Another Example
+
+Current time:
+
+```text
+10:01:45
+```
+
+Real last-60-second window:
+
+```text
+10:00:45 - 10:01:45
+```
+
+This includes:
+
+```text
+15 seconds from previous window
+45 seconds from current window
+```
+
+So previous window weight is:
+
+```text
+15 / 60 = 0.25
+```
+
+If:
+
+```text
+previous_window_count = 80
+current_window_count = 50
+```
+
+Then:
+
+```text
+effective_count = 50 + 80 * 0.25 = 70
+```
+
+So the request is allowed because 70 is below 100.
+
+Pros:
+
+- Much less memory than sliding window log.
+- Smoother than fixed window.
+- Good balance of accuracy and efficiency.
+
+Cons:
+
+- Approximate, not exact.
+- More complex than fixed window.
+- Can still allow small inaccuracies.
+
+Use when:
+
+- You want better smoothness than fixed window.
+- You do not want to store every request timestamp.
+- Approximate limits are acceptable.
+
+Interview mental model:
+
+> Sliding window counter is the practical middle ground between fixed window simplicity and sliding log accuracy.
+
+### 4. Token Bucket
+
+Token bucket uses tokens that refill over time.
+
+Each request consumes one token. If tokens are available, the request is allowed. If the bucket is empty, the request is rejected or delayed.
+
+Example:
+
+```text
+Bucket capacity = 100 tokens
+Refill rate = 10 tokens/second
+Each request costs 1 token
+```
+
+If the user is idle, tokens accumulate up to the bucket capacity. This allows a short burst later.
+
+Flow:
+
+```text
+Request arrives
+Refill tokens based on elapsed time
+If tokens >= request cost:
+  allow request and subtract token
+Else:
+  reject or throttle request
+```
+
+Example:
+
+```text
+User is idle for a while -> bucket fills to 100
+User sends 50 quick requests -> allowed
+Bucket now has 50 tokens
+Tokens continue refilling at 10/second
+```
+
+Pros:
+
+- Allows controlled bursts.
+- Good for APIs where bursts are normal.
+- Efficient memory usage.
+- Flexible because different requests can cost different token amounts.
+
+Cons:
+
+- More complex than fixed window.
+- Burst size must be chosen carefully.
+- If bucket is too large, bursts may overload backend systems.
+
+Use when:
+
+- You want to allow bursts but control long-term rate.
+- API clients may send traffic unevenly.
+- You need a common production-grade rate limiter.
+
+Interview mental model:
+
+> Token bucket allows bursts while enforcing an average rate over time.
+
+### 5. Leaky Bucket
+
+Leaky bucket smooths traffic into a steady output rate.
+
+Think of requests entering a bucket, and the bucket leaking at a constant rate.
+
+Example:
+
+```text
+Requests arrive quickly
+Bucket queues them
+System processes 10 requests/second
+If bucket is full, extra requests are rejected
+```
+
+Flow:
+
+```text
+Request arrives
+If queue/bucket has space:
+  enqueue request
+Else:
+  reject request
+
+Worker drains queue at fixed rate
+```
+
+Pros:
+
+- Smooths bursts.
+- Protects backend with steady request rate.
+- Useful when downstream systems need stable traffic.
+
+Cons:
+
+- Adds queueing delay.
+- Not ideal when users expect immediate response.
+- Bucket/queue size must be tuned carefully.
+
+Use when:
+
+- Downstream systems need stable load.
+- You want traffic shaping, not just request rejection.
+- You can tolerate some queueing delay.
+
+Interview mental model:
+
+> Leaky bucket turns bursty input into smooth output, but it may add latency.
+
+### Token Bucket vs Leaky Bucket
+
+These two are easy to confuse.
+
+| Concept | Token Bucket | Leaky Bucket |
+|---|---|---|
+| Main idea | Tokens refill over time; requests spend tokens. | Requests enter a queue/bucket and drain at fixed rate. |
+| Burst behavior | Allows bursts up to bucket capacity. | Smooths bursts into steady output. |
+| User experience | Burst requests can be served immediately if tokens exist. | Requests may wait in queue. |
+| Best for | Public APIs and client quotas. | Traffic shaping and backend protection. |
+| Risk | Large bucket can allow too much burst. | Queueing can increase latency. |
+
+Quick memory trick:
+
+```text
+Token bucket controls permission to send.
+Leaky bucket controls the rate of processing.
+```
+
+### Which Algorithm Should You Choose?
+
+| Requirement | Good Choice |
+|---|---|
+| Simplest implementation | Fixed window |
+| Accurate rolling limit | Sliding window log |
+| Balanced accuracy and memory | Sliding window counter |
+| Allow controlled bursts | Token bucket |
+| Smooth traffic to backend | Leaky bucket |
+| Distributed approximate limit | Local counters, per-region quota, or token leasing |
+| Strict global limit | Central store such as Redis, with latency/availability tradeoff |
+
 Distributed rate limiting is harder because many servers make decisions at the same time.
 
 Options:
@@ -1891,6 +2382,479 @@ Core concepts:
 - Nearby search
 - Location freshness
 - Matching
+
+### Latitude and Longitude
+
+Latitude and longitude represent a point on Earth.
+
+```text
+Latitude  -> north/south position
+Longitude -> east/west position
+```
+
+Example:
+
+```text
+New York City: latitude 40.7128, longitude -74.0060
+```
+
+In location-based systems, every moving entity usually reports coordinates:
+
+- Driver location
+- Rider pickup location
+- Restaurant location
+- Delivery partner location
+- Vehicle location
+- Store location
+
+Basic distance between two coordinates can be calculated using the Haversine formula, which accounts for the Earth being spherical.
+
+In interviews, you usually do not need to derive the formula. It is enough to say:
+
+> I would use a geo-distance calculation such as Haversine for accurate distance after narrowing candidates with a spatial index.
+
+Important detail:
+
+Distance calculation alone is not enough at scale.
+
+If there are 10 million drivers, you cannot calculate distance from the rider to every driver for every request. You first need a way to find nearby candidates quickly.
+
+Interview mental model:
+
+> Latitude and longitude tell you where something is. Spatial indexing helps you find nearby things efficiently.
+
+### Geohash
+
+Geohash converts latitude and longitude into a string.
+
+Nearby locations often share the same geohash prefix.
+
+Example:
+
+```text
+Location A -> 9q8yyk
+Location B -> 9q8yym
+```
+
+Both start with `9q8y`, so they are likely geographically close.
+
+Think of geohash as dividing the world into rectangular grid cells. Longer geohashes represent smaller cells.
+
+Example:
+
+| Geohash Length | Meaning |
+|---|---|
+| Short prefix | Large area |
+| Long prefix | Smaller, more precise area |
+
+How it helps nearby search:
+
+1. Convert rider location to geohash.
+2. Find drivers in the same geohash cell.
+3. Also check neighboring cells.
+4. Calculate exact distance only for those candidates.
+
+Why neighboring cells matter:
+
+A rider may be near the edge of a cell. The closest driver may be in the adjacent cell, not the same cell.
+
+Example:
+
+```text
+Cell A | Cell B
+Rider  | Driver
+```
+
+Even though rider and driver are close, they are in different cells. So nearby search must check adjacent cells too.
+
+Pros:
+
+- Simple to store as a string.
+- Works well with prefix queries.
+- Easy to use in databases and caches.
+- Good for approximate nearby lookup.
+
+Cons:
+
+- Grid cells are rectangular and may not match real-world movement.
+- Cell boundaries can cause edge cases.
+- Precision must be tuned carefully.
+
+Use when:
+
+- You need a simple geospatial indexing strategy.
+- You want to group locations by approximate area.
+- You want prefix-based lookup in a database or key-value store.
+
+Interview mental model:
+
+> Geohash turns coordinates into searchable grid prefixes. Search the current cell plus nearby cells, then calculate exact distance.
+
+### S2 Cells
+
+S2 is a geometry library that divides the Earth into hierarchical cells.
+
+Instead of treating the Earth as a flat rectangle, S2 models it more naturally on a sphere.
+
+The world is divided into cells at different levels:
+
+```text
+Low level number  -> large cells
+High level number -> small cells
+```
+
+S2 cells are useful because they provide stable cell IDs for geographic areas.
+
+Example use cases:
+
+- Find drivers near a rider.
+- Group restaurants by delivery region.
+- Route users to regional services.
+- Apply surge pricing by area.
+- Aggregate demand heatmaps.
+
+How nearby search works with S2:
+
+1. Convert rider coordinates to an S2 cell.
+2. Get nearby S2 cells that cover the search radius.
+3. Fetch candidate drivers from those cells.
+4. Filter candidates by exact distance and availability.
+
+Why S2 is popular:
+
+- Designed for spherical geometry.
+- Supports hierarchical cells.
+- Good for covering circular or polygon regions.
+- Useful for large-scale geospatial systems.
+
+Tradeoff:
+
+S2 is more powerful than geohash, but also more complex to explain and implement.
+
+Interview mental model:
+
+> S2 divides the Earth into hierarchical spherical cells, making it useful for accurate large-scale geospatial indexing.
+
+### H3 Hexagons
+
+H3 is a hexagonal geospatial indexing system.
+
+It divides the world into hexagon-shaped cells at different resolutions.
+
+Hexagons are useful because each cell has roughly uniform neighbors. This makes them good for area-based analysis.
+
+Example use cases:
+
+- Uber-style demand heatmaps.
+- Surge pricing zones.
+- Delivery coverage zones.
+- Supply-demand balancing.
+- City-level analytics.
+
+Why hexagons are nice:
+
+- Each hexagon has clear neighboring hexagons.
+- Distance between neighboring cells is more uniform.
+- Good for visualizing regional demand.
+- Good for aggregating metrics by area.
+
+Example:
+
+```text
+For each ride request:
+  convert pickup location to H3 cell
+  increment demand counter for that cell
+
+For each available driver:
+  convert driver location to H3 cell
+  increment supply counter for that cell
+```
+
+Then the system can compare demand and supply per area:
+
+```text
+high demand + low supply -> possible surge pricing
+low demand + high supply -> reposition drivers
+```
+
+H3 is often better for analytics and area aggregation than exact nearest-neighbor lookup.
+
+Interview mental model:
+
+> H3 is great for grouping the world into hexagonal regions for analytics, heatmaps, pricing, and supply-demand balancing.
+
+### Quadtrees
+
+A quadtree is a tree data structure for indexing two-dimensional space.
+
+It repeatedly divides an area into four smaller quadrants.
+
+Example:
+
+```text
+Whole city
+  -> northwest quadrant
+  -> northeast quadrant
+  -> southwest quadrant
+  -> southeast quadrant
+```
+
+If one quadrant has too many points, divide it again.
+
+This is useful because dense areas get smaller partitions, while sparse areas stay larger.
+
+Example:
+
+```text
+Downtown: many drivers -> split into smaller cells
+Rural area: few drivers -> keep large cell
+```
+
+Nearby search with a quadtree:
+
+1. Start at the root area.
+2. Traverse only quadrants that overlap the search radius.
+3. Collect candidate drivers from matching quadrants.
+4. Calculate exact distance for candidates.
+
+Pros:
+
+- Adapts well to uneven density.
+- Good for two-dimensional spatial search.
+- Can reduce unnecessary distance checks.
+
+Cons:
+
+- More complex to maintain with frequent moving updates.
+- Rebalancing may be needed.
+- Distributed quadtrees can be harder than static in-memory examples.
+
+Use when:
+
+- The area has uneven density.
+- You need efficient spatial range queries.
+- You can manage updates and partitioning complexity.
+
+Interview mental model:
+
+> Quadtrees split busy areas more deeply, so dense regions get finer indexing than sparse regions.
+
+### Nearby Search
+
+Nearby search means finding entities close to a given location.
+
+Examples:
+
+- Find drivers near a rider.
+- Find restaurants near a customer.
+- Find stores within 5 km.
+- Find charging stations near a vehicle.
+
+Naive approach:
+
+```text
+For every driver:
+  calculate distance from rider
+  sort by distance
+  pick nearest drivers
+```
+
+This does not scale because every request scans too many entities.
+
+Scalable approach:
+
+```text
+Rider location
+  -> convert to spatial cell
+  -> fetch candidates from nearby cells
+  -> filter by exact distance
+  -> rank by ETA, distance, rating, availability, or business rules
+```
+
+Typical nearby search flow:
+
+```text
+1. Receive rider pickup location.
+2. Convert pickup coordinates to geohash/S2/H3 cell.
+3. Search current cell and neighboring cells.
+4. Fetch available drivers from those cells.
+5. Remove stale or unavailable drivers.
+6. Calculate actual distance or ETA.
+7. Rank candidates.
+8. Try to reserve the best driver atomically.
+```
+
+Distance is not always enough.
+
+In ride matching, the nearest driver by straight-line distance may not be the fastest driver because roads, traffic, one-way streets, and turns matter.
+
+Better ranking signals:
+
+- Road-network ETA
+- Driver availability
+- Driver direction of travel
+- Vehicle type
+- Rider preferences
+- Driver acceptance probability
+- Fairness and marketplace balance
+
+Interview mental model:
+
+> Use spatial indexing to find candidates, then use exact distance or ETA to rank them.
+
+### Location Freshness
+
+Location freshness means how recent a location update is.
+
+Moving entities become stale quickly.
+
+Example:
+
+```text
+Driver was at location X 3 minutes ago.
+Driver may now be far away.
+```
+
+Every location update should usually include:
+
+- Entity ID
+- Latitude
+- Longitude
+- Timestamp
+- Optional speed/direction
+- Optional accuracy
+
+Example:
+
+```json
+{
+  "driverId": "driver-123",
+  "lat": 40.7128,
+  "lng": -74.0060,
+  "timestamp": "2026-04-27T10:15:30Z",
+  "speedMetersPerSecond": 8.2,
+  "headingDegrees": 90
+}
+```
+
+Freshness rules:
+
+| Location Age | Meaning |
+|---|---|
+| 0-10 seconds | Very fresh |
+| 10-30 seconds | Usually acceptable |
+| 30-120 seconds | Risky for fast-moving entities |
+| More than 120 seconds | Often stale |
+
+How systems handle stale locations:
+
+- Ignore old locations during matching.
+- Show stale markers differently on maps.
+- Ask client to send a fresh update.
+- Predict current position using speed and heading.
+- Remove entity from active availability after timeout.
+
+Tradeoff:
+
+Frequent updates improve accuracy but increase write load, battery usage, network usage, and backend cost.
+
+Example:
+
+```text
+1M active drivers sending location every 5 seconds
+= 200K location updates per second
+```
+
+This is why location systems often use streaming pipelines, in-memory geo indexes, and TTL-based storage.
+
+Interview mental model:
+
+> In location systems, old coordinates can be worse than no coordinates. Always reason about timestamp and freshness.
+
+### Matching
+
+Matching means choosing the best entity for a request.
+
+In ride-sharing, matching chooses a driver for a rider. In delivery, it may choose a courier for an order.
+
+Matching is not simply nearest-neighbor search.
+
+It is an optimization problem with business constraints.
+
+Example signals:
+
+- Distance to pickup
+- ETA to pickup
+- Driver availability
+- Driver vehicle type
+- Driver rating or reliability
+- Rider priority
+- Current traffic
+- Driver direction
+- Demand/supply balance
+- Cancellation probability
+- Fairness across drivers
+
+Basic matching flow:
+
+```text
+Rider requests trip
+  -> find nearby candidate drivers
+  -> rank candidates
+  -> reserve best driver
+  -> send offer to driver
+  -> driver accepts or rejects
+  -> if rejected, try next candidate
+```
+
+Important race condition:
+
+Two riders may try to match with the same driver at the same time.
+
+Bad behavior:
+
+```text
+Rider A sees Driver 1 as available
+Rider B sees Driver 1 as available
+Both assign Driver 1
+```
+
+Fix:
+
+Use an atomic state transition.
+
+```text
+available -> reserved
+```
+
+Only one request should successfully reserve the driver.
+
+Example database condition:
+
+```sql
+UPDATE drivers
+SET status = 'reserved', reserved_by = 'rider-123'
+WHERE driver_id = 'driver-1'
+  AND status = 'available';
+```
+
+If the update affects one row, reservation succeeded. If it affects zero rows, another rider got the driver first.
+
+Matching also needs timeouts.
+
+Example:
+
+```text
+Driver reserved for Rider A
+Driver does not respond in 10 seconds
+Reservation expires
+Driver becomes available again
+System tries next candidate for Rider A
+```
+
+Interview mental model:
+
+> Nearby search finds candidates. Matching chooses and reserves one safely under concurrency.
 
 Example ride matching flow:
 
