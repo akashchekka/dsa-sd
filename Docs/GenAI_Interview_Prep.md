@@ -12,6 +12,7 @@
     - [Q3: What are the different chunking strategies and their tradeoffs?](#q3-what-are-the-different-chunking-strategies-and-their-tradeoffs)
     - [Q4: What is Hybrid Search and why is it better than pure vector search?](#q4-what-is-hybrid-search-and-why-is-it-better-than-pure-vector-search)
     - [Q5: What is a Reranker and why use one?](#q5-what-is-a-reranker-and-why-use-one)
+      - [Faster and Precise responses](#faster-and-precise-responses)
     - [Q6: What are common RAG failure modes and how do you fix them?](#q6-what-are-common-rag-failure-modes-and-how-do-you-fix-them)
     - [Q7: What is the "Lost in the Middle" problem?](#q7-what-is-the-lost-in-the-middle-problem)
     - [Q8: Explain Advanced RAG patterns.](#q8-explain-advanced-rag-patterns)
@@ -162,6 +163,55 @@
 
 **Examples:** Cohere Rerank, Azure AI Search Semantic Ranker, BGE Reranker, Jina Reranker
 
+#### Faster and Precise responses
+
+- 1. **Two-stage pipeline (most common)**
+Bi-encoder (fast, broad) → Cross-encoder (slow, precise) on top-k only. This is the standard answer.
+
+- 2. **Better bi-encoders**
+  - Use higher-quality embedding models (e.g., `e5-large`, `BGE`, `GTE`, Cohere Embed)
+  - **Fine-tune** on your domain data — this is the single biggest accuracy boost
+  - Use **Matryoshka embeddings** — trade off dimensionality vs accuracy dynamically
+
+- 3. **Hybrid retrieval**
+Combine **sparse** (BM25/keyword) + **dense** (bi-encoder) retrieval, then fuse results:
+```
+Query
+  ├── BM25 (keyword match)      → Top-50
+  ├── Bi-encoder (semantic)     → Top-50
+  ↓
+  Reciprocal Rank Fusion (RRF)  → Top-20 merged
+  ↓
+  Cross-encoder rerank          → Top-5
+  ↓
+  LLM
+```
+This catches cases where semantic search misses exact keyword matches and vice versa.
+
+- 4. **ColBERT (best of both worlds)**
+A **late interaction** model — encodes query and document separately (like bi-encoder, so precomputation is possible), but compares them at the **token level** instead of a single vector:
+```
+Bi-encoder:  query → 1 vector,  doc → 1 vector  → 1 similarity score
+ColBERT:     query → N vectors, doc → M vectors  → MaxSim token matching
+```
+**Faster than cross-encoder, more precise than bi-encoder.**
+
+- 5. **Better chunking**
+Often the bottleneck isn't the model — it's how you split documents. Smaller, semantically coherent chunks improve both speed and accuracy.
+
+---
+
+**TL;DR ranking by speed vs accuracy:**
+
+| Approach | Speed | Accuracy |
+|----------|-------|----------|
+| BM25 only | ★★★★★ | ★★ |
+| Bi-encoder only | ★★★★ | ★★★ |
+| Hybrid (BM25 + Bi-encoder) | ★★★★ | ★★★★ |
+| ColBERT | ★★★ | ★★★★ |
+| Bi-encoder + Cross-encoder | ★★★ | ★★★★★ |
+| Hybrid + Cross-encoder | ★★★ | ★★★★★ |
+
 ### Q6: What are common RAG failure modes and how do you fix them?
 
 | Failure | Cause | Fix |
@@ -253,6 +303,10 @@
 | **Flat/Brute Force** | Exact search, no index | Perfect recall, doesn't scale |
 
 **Production choice:** HNSW is the most common default (Pinecone, Weaviate, Azure AI Search, pgvector all use it).
+
+- > < 1M vectors   → HNSW (just works, high accuracy)
+- > 1M - 100M      → IVF + PQ or HNSW + PQ
+- > 100M         → IVFPQ + reranking (memory is the bottleneck)
 
 ### Q12: Compare vector database options.
 

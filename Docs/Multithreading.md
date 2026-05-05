@@ -1,3169 +1,2289 @@
-# Multithreading & Concurrency – Interview Guide
+# Multithreading & Concurrency in Python — FAANG Interview Guide
+
+> **Goal:** Understand concurrency from scratch, then solve machine coding / LLD rounds at Uber, Google, Meta, Amazon, etc. All examples in Python.
+
+---
 
 ## Table of Contents
 
-1. [Concurrency Overview](#1-concurrency-overview)
-2. [Concurrency vs Parallelism](#2-concurrency-vs-parallelism)
-3. [Processes vs Threads](#3-processes-vs-threads)
-4. [Thread Lifecycle](#4-thread-lifecycle)
-5. [Race Conditions](#5-race-conditions)
-6. [Mutex](#6-mutex)
-7. [Semaphores](#7-semaphores)
-8. [Condition Variables](#8-condition-variables)
-9. [Coarse-Grained vs Fine-Grained Locking](#9-coarse-grained-vs-fine-grained-locking)
-10. [Reentrant Locks](#10-reentrant-locks)
-11. [Try-Lock](#11-try-lock)
-12. [Compare-and-Swap (CAS)](#12-compare-and-swap-cas)
-13. [Deadlock](#13-deadlock)
-14. [Livelock](#14-livelock)
-15. [Signaling Pattern](#15-signaling-pattern)
-16. [Thread Pool Pattern](#16-thread-pool-pattern)
-17. [Producer-Consumer Pattern](#17-producer-consumer-pattern)
-18. [Reader-Writer Pattern](#18-reader-writer-pattern)
-19. [Thread-Safe Cache](#19-thread-safe-cache)
-20. [Thread-Safe Blocking Queue](#20-thread-safe-blocking-queue)
-21. [Async/Await and Task-Based Asynchronous Pattern](#21-asyncawait-and-task-based-asynchronous-pattern)
-22. [Volatile and Memory Barriers](#22-volatile-and-memory-barriers)
-23. [Concurrent Collections](#23-concurrent-collections)
-24. [Cancellation Tokens](#24-cancellation-tokens)
-25. [Thread-Local Storage](#25-thread-local-storage)
-26. [Immutability and Thread Safety](#26-immutability-and-thread-safety)
-27. [Parallel Programming (PLINQ & Parallel Class)](#27-parallel-programming-plinq--parallel-class)
-28. [Async Streams (IAsyncEnumerable)](#28-async-streams-iasyncenumerable)
-29. [Thread Starvation and ThreadPool Tuning](#29-thread-starvation-and-threadpool-tuning)
-30. [Context Switching and False Sharing](#30-context-switching-and-false-sharing)
-31. [Lock-Free and Wait-Free Algorithms](#31-lock-free-and-wait-free-algorithms)
-32. [Priority Inversion](#32-priority-inversion)
-33. [Fork-Join Pattern](#33-fork-join-pattern)
-34. [Timers in .NET](#34-timers-in-net)
-35. [Interview Questions](#35-interview-questions)
+- [Multithreading \& Concurrency in Python — FAANG Interview Guide](#multithreading--concurrency-in-python--faang-interview-guide)
+  - [Table of Contents](#table-of-contents)
+  - [1. Why Concurrency?](#1-why-concurrency)
+  - [Concurrency vs Parallelism](#concurrency-vs-parallelism)
+    - [Key Terms (Just 4 to Start)](#key-terms-just-4-to-start)
+  - [2. Threads, Processes \& the GIL](#2-threads-processes--the-gil)
+    - [Thread vs Process](#thread-vs-process)
+    - [Python's GIL (Global Interpreter Lock)](#pythons-gil-global-interpreter-lock)
+  - [3. Creating Threads](#3-creating-threads)
+    - [Basic Thread Creation](#basic-thread-creation)
+    - [Daemon Threads](#daemon-threads)
+    - [Key Methods](#key-methods)
+  - [4. Race Conditions — The Core Problem](#4-race-conditions--the-core-problem)
+    - [The Classic Bug](#the-classic-bug)
+    - [Why Does This Happen?](#why-does-this-happen)
+    - [Types of Race Conditions](#types-of-race-conditions)
+    - [Fix: Use a Lock](#fix-use-a-lock)
+  - [5. Locks (Mutex)](#5-locks-mutex)
+    - [Basic Usage](#basic-usage)
+    - [Bank Account Example](#bank-account-example)
+    - [Rules for Using Locks](#rules-for-using-locks)
+  - [6. RLock (Reentrant Lock)](#6-rlock-reentrant-lock)
+    - [When Do You Need RLock?](#when-do-you-need-rlock)
+  - [7. Condition Variables](#7-condition-variables)
+    - [The Problem Without Conditions](#the-problem-without-conditions)
+    - [The Solution: Condition Variables](#the-solution-condition-variables)
+    - [How `condition.wait()` Works (3 Steps, Atomic)](#how-conditionwait-works-3-steps-atomic)
+    - [Key Methods](#key-methods-1)
+    - [Why `while` Not `if`?](#why-while-not-if)
+  - [8. Semaphores](#8-semaphores)
+    - [BoundedSemaphore — Safer Version](#boundedsemaphore--safer-version)
+    - [Semaphore vs Lock](#semaphore-vs-lock)
+  - [9. Events](#9-events)
+    - [Event Methods](#event-methods)
+    - [Event vs Condition](#event-vs-condition)
+  - [10. Barriers](#10-barriers)
+  - [11. Thread-Safe Data Structures](#11-thread-safe-data-structures)
+    - [queue.Queue — Thread-Safe Queue](#queuequeue--thread-safe-queue)
+    - [Queue Variants](#queue-variants)
+    - [collections.deque vs queue.Queue](#collectionsdeque-vs-queuequeue)
+  - [12. Deadlock, Livelock \& Starvation](#12-deadlock-livelock--starvation)
+    - [Deadlock](#deadlock)
+    - [4 Conditions for Deadlock (ALL must be true)](#4-conditions-for-deadlock-all-must-be-true)
+    - [Fix: Consistent Lock Ordering](#fix-consistent-lock-ordering)
+    - [Fix: Timeout](#fix-timeout)
+    - [Livelock](#livelock)
+    - [Starvation](#starvation)
+    - [Summary](#summary)
+  - [13. Thread Pool (concurrent.futures)](#13-thread-pool-concurrentfutures)
+    - [map() — Simpler API](#map--simpler-api)
+    - [ProcessPoolExecutor — For CPU-Bound Work](#processpoolexecutor--for-cpu-bound-work)
+    - [When to Use What](#when-to-use-what)
+  - [14. async/await (asyncio)](#14-asyncawait-asyncio)
+    - [async vs threading — When to Use](#async-vs-threading--when-to-use)
+    - [asyncio Synchronization (same concepts!)](#asyncio-synchronization-same-concepts)
+  - [15. Common Patterns Cheat Sheet](#15-common-patterns-cheat-sheet)
+  - [16. Machine Coding Problems](#16-machine-coding-problems)
+    - [16.1 Producer-Consumer (Bounded Buffer)](#161-producer-consumer-bounded-buffer)
+    - [16.2 Reader-Writer Lock](#162-reader-writer-lock)
+    - [16.3 Thread-Safe LRU Cache](#163-thread-safe-lru-cache)
+    - [16.4 Rate Limiter (Token Bucket)](#164-rate-limiter-token-bucket)
+    - [16.5 Rate Limiter (Sliding Window)](#165-rate-limiter-sliding-window)
+    - [16.6 Print In Order / Sequence Controller](#166-print-in-order--sequence-controller)
+    - [16.7 Print FooBar Alternately](#167-print-foobar-alternately)
+    - [16.8 Dining Philosophers](#168-dining-philosophers)
+    - [16.9 Blocking Queue](#169-blocking-queue)
+    - [16.10 Thread Pool from Scratch](#1610-thread-pool-from-scratch)
+    - [16.11 Scheduled Task Executor (Uber)](#1611-scheduled-task-executor-uber)
+    - [16.12 Ride Matching System (Uber)](#1612-ride-matching-system-uber)
+    - [16.13 Concurrent Web Crawler](#1613-concurrent-web-crawler)
+    - [16.14 Traffic Signal Controller](#1614-traffic-signal-controller)
+    - [16.15 Async Job Scheduler](#1615-async-job-scheduler)
+  - [17. Interview Quick Reference](#17-interview-quick-reference)
+    - [Python Concurrency Primitives](#python-concurrency-primitives)
+    - [Decision Flowchart](#decision-flowchart)
+    - [Common Interview Q\&A](#common-interview-qa)
+    - [Machine Coding Round Tips](#machine-coding-round-tips)
 
 ---
 
-## 1. Concurrency Overview
+## 1. Why Concurrency?
 
-**Concurrency** is the ability of a system to handle multiple tasks that are in progress at the same time. The tasks may not be executing simultaneously — they can be interleaved on a single core.
+## Concurrency vs Parallelism
 
-Think of a single-core CPU running a web server. It can't physically execute two requests at the same instant, but it can rapidly switch between them — serving a bit of Request A, then a bit of Request B, then back to A. From the outside, both requests appear to be handled "at the same time." That's concurrency.
+**Concurrency** = Your program is structured to handle multiple tasks. They may not run at the exact same time — they take turns.
 
-Concurrency is fundamentally about **managing complexity**. Modern software must deal with network calls, disk I/O, user input, timers, and background tasks all happening together. Without concurrency, a program would freeze entirely while waiting for a database query to return.
+**Parallelism** = Multiple tasks actually execute at the same instant on different CPU cores.
 
-### Why Concurrency Matters
+```
+Concurrency (1 core, interleaving):
+  Task A: ████░░░░████░░░░
+  Task B: ░░░░████░░░░████
+  → Only one runs at any instant, but both make progress
 
-| Benefit | Example |
-|---|---|
-| **Responsiveness** | UI stays interactive while loading data |
-| **Throughput** | Web server handles thousands of requests |
-| **Resource utilization** | CPU does work while waiting for I/O |
-| **Scalability** | Distribute work across cores/machines |
+Parallelism (2 cores, simultaneous):
+  Core 1: ████████████████  Task A
+  Core 2: ████████████████  Task B
+  → Both run at the same instant
+```
 
-### Concurrency Models
+**Key point:** Concurrency is about **structure** (dealing with many things). Parallelism is about **execution** (doing many things at once).
 
-There are several ways to structure concurrent programs. Each model offers a different tradeoff between performance, safety, and complexity. In **shared memory**, threads read and write the same data — this is fast but requires careful synchronization. In **message passing**, threads or processes communicate by sending messages instead of sharing state directly, which eliminates many synchronization bugs at the cost of some overhead.
+You can have:
+- **Concurrency without parallelism** — `async`/`await` on a single core. Tasks take turns at `await` points, but only one runs at a time.
+- **Parallelism without concurrency** — A single loop split across 4 cores using `multiprocessing`. One task, multiple cores.
+- **Both** — A web server using a thread pool on a multi-core machine. Multiple requests handled by multiple threads running on separate cores.
 
-| Model | Description | C# Support |
+In Python specifically:
+- **Threads** give you concurrency but NOT parallelism for CPU work (because of the GIL). They DO give parallelism for I/O work (GIL is released during I/O).
+- **Processes** (`multiprocessing`) give you both concurrency AND parallelism (each process has its own GIL).
+- **asyncio** gives you concurrency on a single thread — no parallelism at all.
+
+### Key Terms (Just 4 to Start)
+
+| Term | One-Line Definition |
+|------|---------------------|
+| **Thread** | A lightweight worker inside your program |
+| **Lock** | Only one thread can enter the protected section at a time |
+| **Race condition** | Bug caused by two threads touching the same data at the same time |
+| **Deadlock** | Two threads waiting for each other forever — both stuck |
+
+---
+
+## 2. Threads, Processes & the GIL
+
+### Thread vs Process
+
+**Process** = Independent program with its own memory. Isolated but expensive to create.
+
+**Thread** = Lightweight worker inside a process. Shares memory with other threads — fast but needs synchronization.
+
+| | Process | Thread |
 |---|---|---|
-| **Shared Memory** | Threads share the same address space | Default model |
-| **Message Passing** | Processes communicate via messages | `Channel<T>`, `System.Threading.Channels` |
-| **Actor Model** | Isolated actors with message queues | Akka.NET, Orleans |
-| **CSP (Communicating Sequential Processes)** | Processes synchronize via channels | `Channel<T>` |
+| **Memory** | Separate (isolated) | Shared (same memory) |
+| **Cost** | Heavy (~MB of memory) | Light (~KB of memory) |
+| **Communication** | Hard (pipes, queues) | Easy (shared variables) |
+| **Crash impact** | Only that process dies | Whole program can crash |
 
-```csharp
-// Shared memory — threads share a variable
-int counter = 0;
-var threads = Enumerable.Range(0, 10).Select(_ => new Thread(() =>
-{
-    for (int i = 0; i < 1000; i++)
-        Interlocked.Increment(ref counter);
-})).ToList();
+### Python's GIL (Global Interpreter Lock)
 
-threads.ForEach(t => t.Start());
-threads.ForEach(t => t.Join());
-Console.WriteLine(counter); // 10000 — correct with Interlocked
+Python has a unique limitation: the **GIL** (Global Interpreter Lock). It ensures only one thread runs Python bytecode at a time, even on a multi-core machine.
+
+```
+Without GIL (Java, C++):
+  Core 1: Thread A ████████████
+  Core 2: Thread B ████████████   ← True parallel
+
+With GIL (Python):
+  Core 1: Thread A ████░░░░████░░░░████
+  Core 1: Thread B ░░░░████░░░░████░░░░  ← Interleaved, not parallel
+```
+
+**Does this mean threads are useless in Python?** NO!
+
+- **I/O-bound work** (network calls, file reads, database queries): Threads work great! The GIL is released during I/O waits, so other threads can run.
+- **CPU-bound work** (math, image processing): Use `multiprocessing` instead — each process has its own GIL.
+
+**For interviews:** The GIL doesn't affect thread synchronization problems. Locks, semaphores, and condition variables work exactly the same way. The GIL just means you won't get CPU speedup from threads — but that's NOT what interview problems test.
+
+```python
+# I/O-bound → use threads (GIL is released during I/O)
+import threading
+
+def download(url):
+    response = requests.get(url)  # GIL released here!
+    return response.text
+
+# CPU-bound → use processes (each has own GIL)
+from multiprocessing import Process
+
+def compute(data):
+    return sum(x * x for x in data)  # CPU-heavy
 ```
 
 ---
 
-## 2. Concurrency vs Parallelism
+## 3. Creating Threads
 
-This is one of the most frequently confused pairs of terms in interviews. **Concurrency** is about the structure of your program — it's about *dealing* with multiple things at once. **Parallelism** is about execution — it's about *doing* multiple things at once.
+### Basic Thread Creation
 
-A single-core machine can be concurrent (switching between tasks) but never truly parallel. A multi-core machine can be both. You need concurrency to take advantage of parallelism, but concurrency is valuable even without it — for example, a GUI app uses concurrency on a single thread to stay responsive while fetching data.
+```python
+import threading
+import time
 
-Rob Pike (Go language creator) put it best: *"Concurrency is about dealing with lots of things at once. Parallelism is about doing lots of things at once."*
+def worker(name, seconds):
+    print(f"{name}: Starting")
+    time.sleep(seconds)  # Simulates work
+    print(f"{name}: Done")
 
-| | Concurrency | Parallelism |
-|---|---|---|
-| **Definition** | Managing multiple tasks at once | Executing multiple tasks at the same instant |
-| **Cores needed** | 1+ (interleaving) | 2+ (true simultaneous) |
-| **Goal** | Structure / responsiveness | Speed / throughput |
-| **Analogy** | One cook juggling multiple dishes | Multiple cooks each cooking a dish |
-| **Example** | async/await on a single thread | `Parallel.ForEach` across cores |
+# Create threads
+t1 = threading.Thread(target=worker, args=("Thread-1", 2))
+t2 = threading.Thread(target=worker, args=("Thread-2", 1))
 
-```
-Concurrency (1 core):
-  Task A: ████░░░░████░░░░████
-  Task B: ░░░░████░░░░████░░░░
+# Start them (they run concurrently)
+t1.start()
+t2.start()
 
-Parallelism (2 cores):
-  Core 1: ████████████████████  Task A
-  Core 2: ████████████████████  Task B
-```
+# Wait for both to finish
+t1.join()
+t2.join()
 
-```csharp
-// Concurrency — async I/O, single thread can handle both
-async Task ConcurrentExample()
-{
-    Task<string> download1 = HttpClient.GetStringAsync("https://api1.example.com");
-    Task<string> download2 = HttpClient.GetStringAsync("https://api2.example.com");
-    string[] results = await Task.WhenAll(download1, download2);
-}
-
-// Parallelism — CPU-bound work across multiple cores
-void ParallelExample()
-{
-    var numbers = Enumerable.Range(1, 1_000_000).ToList();
-    Parallel.ForEach(numbers, n =>
-    {
-        // Each iteration can run on a different core
-        double result = Math.Sqrt(n) * Math.Log(n);
-    });
-}
+print("All done!")
 ```
 
-**Interview Tip:** Concurrency is about **structure** (dealing with many things). Parallelism is about **execution** (doing many things). You can have concurrency without parallelism (async on single core) and parallelism without concurrency (SIMD instructions).
+Output:
+```
+Thread-1: Starting
+Thread-2: Starting
+Thread-2: Done      ← finishes first (only 1 second)
+Thread-1: Done
+All done!
+```
+
+### Daemon Threads
+
+A daemon thread dies automatically when the main program exits.
+
+```python
+# Daemon thread — won't keep the program alive
+t = threading.Thread(target=worker, args=("Background", 10), daemon=True)
+t.start()
+# Program exits immediately — daemon thread is killed
+```
+
+### Key Methods
+
+| Method | What It Does |
+|--------|--------------|
+| `t.start()` | Begin executing the thread |
+| `t.join()` | Wait for the thread to finish |
+| `t.join(timeout=5)` | Wait at most 5 seconds |
+| `t.is_alive()` | Check if thread is still running |
+| `t.daemon = True` | Thread dies when main thread exits |
+| `threading.current_thread()` | Get the current thread object |
 
 ---
 
-## 3. Processes vs Threads
+## 4. Race Conditions — The Core Problem
 
-A **process** is an independent program in execution. It has its own memory space (code, data, heap, stack), file handles, and security context. The operating system isolates processes from each other — one process crashing won't bring down another. However, this isolation comes at a cost: creating a process is expensive, and communicating between processes requires explicit IPC (Inter-Process Communication) mechanisms like pipes, sockets, or shared memory.
+A **race condition** happens when two threads read/write the same variable and the result depends on timing.
 
-A **thread** is the smallest unit of execution within a process. Multiple threads in the same process share the same memory space — they can read and write the same variables directly. This makes communication between threads trivially fast (just read a shared variable), but it also makes it dangerous: without proper synchronization, threads can corrupt shared data. Creating threads is much cheaper than creating processes because there's no need to duplicate the entire address space.
+### The Classic Bug
 
-In practice, most concurrent programs in C# use threads (or Tasks, which run on threads) because the shared-memory model is efficient. Processes are used when you need isolation — for example, running untrusted code in a sandbox, or using multiple CPU cores in languages that have a GIL (Global Interpreter Lock) like Python.
+```python
+import threading
 
-| Feature | Process | Thread |
-|---|---|---|
-| **Memory** | Own address space | Shares process memory |
-| **Creation cost** | Heavy (new address space, OS resources) | Lightweight (shared resources) |
-| **Communication** | IPC (pipes, sockets, shared memory) | Direct memory access |
-| **Isolation** | Complete — crash doesn't affect others | None — crash can kill process |
-| **Context switch** | Expensive (TLB flush, page tables) | Cheaper (same address space) |
-| **OS entity** | Yes | Yes (kernel threads) |
+counter = 0
 
-```csharp
-// Creating a process
-using var process = new Process
-{
-    StartInfo = new ProcessStartInfo
-    {
-        FileName = "dotnet",
-        Arguments = "--version",
-        RedirectStandardOutput = true,
-        UseShellExecute = false
-    }
-};
-process.Start();
-string output = process.StandardOutput.ReadToEnd();
-process.WaitForExit();
+def increment():
+    global counter
+    for _ in range(1_000_000):
+        counter += 1  # NOT thread-safe!
 
-// Creating a thread
-var thread = new Thread(() =>
-{
-    Console.WriteLine($"Thread {Thread.CurrentThread.ManagedThreadId} running");
-});
-thread.IsBackground = true;  // won't keep app alive
-thread.Start();
-thread.Join();                // wait for completion
+t1 = threading.Thread(target=increment)
+t2 = threading.Thread(target=increment)
+
+t1.start()
+t2.start()
+t1.join()
+t2.join()
+
+print(counter)  # Expected: 2,000,000. Actual: ~1,500,000 (random!)
 ```
 
-### User-Space Threads (Fibers/Green Threads)
+### Why Does This Happen?
 
-Not all threads are equal. **Kernel threads** are managed by the operating system — the OS scheduler decides when each thread runs. **User-space threads** (also called green threads or fibers) are managed by the application runtime, which can switch between them much more cheaply because no kernel involvement is needed. Go's goroutines are a famous example: you can spin up millions of goroutines because each costs only ~2KB of stack space, compared to ~1MB for an OS thread.
-
-In .NET, `Task` and `async/await` give you something similar — you can have millions of Tasks in flight, but they're multiplexed onto a small pool of OS threads by the ThreadPool scheduler.
-
-| Type | Scheduled by | Context switch | Examples |
-|---|---|---|---|
-| Kernel thread | OS kernel | Expensive | `Thread`, pthreads |
-| User thread / Fiber | Runtime | Very cheap | Go goroutines, Erlang processes |
-| .NET Tasks | ThreadPool + scheduler | Cooperative | `Task`, `async/await` |
-
----
-
-## 4. Thread Lifecycle
-
-Every thread goes through a series of states from birth to death. Understanding this lifecycle is essential for debugging multithreaded programs — when you take a thread dump and see a thread in `WaitSleepJoin` state, you know it's blocked on something (a `lock`, a `Thread.Sleep`, or a `Thread.Join` call).
-
-A thread starts in the **Unstarted** state when you create it with `new Thread(...)`. It moves to **Runnable** when you call `Start()`. The OS scheduler then picks it up and puts it in the **Running** state. If the thread calls `Sleep()`, `Wait()`, or `Join()`, it moves to **Waiting/Blocked** — it won't consume CPU time until the blocking condition is resolved. When the thread's method returns, it enters the **Terminated** state and cannot be restarted.
+`counter += 1` looks like one operation, but it's actually THREE:
 
 ```
-          Start()
-  New ──────────► Runnable ◄──────────┐
-                    │                  │
-                    │ CPU scheduled    │ Sleep/Wait
-                    ▼                  │ completed
-                 Running ─────────► Waiting/Blocked
-                    │                  │
-                    │ Work done        │ Interrupt/
-                    ▼                  │ Abort
-                Terminated            │
-                    ▲                  │
-                    └──────────────────┘
+1. Read counter value     (e.g., 42)
+2. Add 1                  (43)
+3. Write back             (counter = 43)
 ```
 
-### Thread States in C#
-
-| State | `ThreadState` Value | Description |
-|---|---|---|
-| Unstarted | `Unstarted` | Created but `Start()` not called |
-| Running | `Running` | Executing on CPU |
-| WaitSleepJoin | `WaitSleepJoin` | Blocked on `Sleep`, `Wait`, `Join` |
-| Stopped | `Stopped` | Execution completed |
-| Suspended | `Suspended` | Deprecated — do not use |
-| Background | `Background` | Won't prevent app exit |
-
-```csharp
-var thread = new Thread(() =>
-{
-    Console.WriteLine("Working...");
-    Thread.Sleep(1000);
-    Console.WriteLine("Done");
-});
-
-Console.WriteLine(thread.ThreadState); // Unstarted
-thread.Start();
-Console.WriteLine(thread.ThreadState); // Running (or WaitSleepJoin)
-thread.Join();
-Console.WriteLine(thread.ThreadState); // Stopped
-```
-
-### Foreground vs Background Threads
-
-This distinction is critical to understand: a .NET application stays alive as long as at least one **foreground thread** is running. When all foreground threads finish, the CLR shuts down the process — any running **background threads** are abruptly killed without getting a chance to clean up. By default, threads created with `new Thread()` are foreground threads. All ThreadPool threads (and therefore all `Task.Run` tasks) are background threads.
-
-This means if you start a background thread to save data to disk and your `Main` method exits, that background thread will be killed mid-write. Always `Join()` or `await` important work before exiting.
-
-```csharp
-// Foreground — app waits for it to finish
-var fg = new Thread(() => Thread.Sleep(5000));
-fg.IsBackground = false; // default
-fg.Start();
-
-// Background — killed when all foreground threads exit
-var bg = new Thread(() => Thread.Sleep(5000));
-bg.IsBackground = true;
-bg.Start();
-
-// Task threads are background by default
-```
-
----
-
-## 5. Race Conditions
-
-A **race condition** occurs when the outcome of a program depends on the relative timing or ordering of thread execution — something the programmer has no control over. Race conditions are among the most insidious bugs in software because they're non-deterministic: the code might work correctly 99.9% of the time and fail only under specific timing conditions, making them extremely hard to reproduce and debug.
-
-The root cause is almost always **unprotected access to shared mutable state**. When two threads read and write the same variable without synchronization, the final result depends on which thread "wins the race" to read or write first. The terrifying part is that `counter++` looks like a single operation in C#, but it's actually three operations at the CPU level: read the value, increment it, write it back. Another thread can sneak in between any of these steps.
-
-```csharp
-// ❌ Race condition — increment is NOT atomic
-// Read-Modify-Write: 3 separate operations
-int counter = 0;
-
-var tasks = Enumerable.Range(0, 100).Select(_ => Task.Run(() =>
-{
-    for (int i = 0; i < 10_000; i++)
-        counter++; // NOT thread-safe
-})).ToArray();
-
-Task.WaitAll(tasks);
-Console.WriteLine(counter); // < 1,000,000 — lost updates!
-```
-
-### Why It Happens — Non-Atomic Read-Modify-Write
+Two threads can interleave these steps:
 
 ```
-Thread A:  Read counter (0) → Increment (1) → Write (1)
-Thread B:     Read counter (0) → Increment (1) → Write (1)  ← LOST UPDATE
-Expected: 2, Got: 1
-```
+Thread A: Read counter (42)
+Thread B: Read counter (42)     ← Reads SAME old value!
+Thread A: Write 43
+Thread B: Write 43              ← Overwrites A's work!
 
-### Fixes
-
-```csharp
-// Fix 1: Interlocked (lock-free atomic operation)
-Interlocked.Increment(ref counter);
-
-// Fix 2: lock (mutual exclusion)
-lock (_lockObj)
-{
-    counter++;
-}
-
-// Fix 3: Use thread-safe type
-ConcurrentDictionary<string, int> safeDict = new();
-safeDict.AddOrUpdate("key", 1, (k, v) => v + 1);
+Expected: 44, Got: 43 — one update LOST
 ```
 
 ### Types of Race Conditions
 
-| Type | Description |
-|---|---|
-| **Check-then-act** | `if (dict.ContainsKey(k)) dict[k]++` — gap between check and act |
-| **Read-modify-write** | `counter++` — not atomic |
-| **Compound action** | Multiple operations that should be atomic but aren't |
+| Type | Example | Fix |
+|------|---------|-----|
+| **Read-modify-write** | `counter += 1` | Use a Lock |
+| **Check-then-act** | `if key not in dict: dict[key] = val` | Atomic operation or Lock |
+| **Compound action** | Transfer: `a -= x; b += x` | Lock both |
 
-```csharp
-// ❌ Check-then-act race
-if (!dict.ContainsKey("key"))
-    dict["key"] = ComputeExpensiveValue(); // another thread may add between check and set
+### Fix: Use a Lock
 
-// ✅ Fix with ConcurrentDictionary
-dict.GetOrAdd("key", _ => ComputeExpensiveValue());
+```python
+import threading
+
+counter = 0
+lock = threading.Lock()
+
+def increment():
+    global counter
+    for _ in range(1_000_000):
+        with lock:          # Only one thread enters at a time
+            counter += 1
+
+t1 = threading.Thread(target=increment)
+t2 = threading.Thread(target=increment)
+t1.start()
+t2.start()
+t1.join()
+t2.join()
+
+print(counter)  # Always 2,000,000 ✓
 ```
 
 ---
 
-## 6. Mutex
+## 5. Locks (Mutex)
 
-A **Mutex** (mutual exclusion) is the most fundamental synchronization primitive. It ensures that only one thread can enter a **critical section** (a block of code that accesses shared resources) at a time. Think of it as a bathroom lock — when one person locks the door, everyone else must wait outside until they're done.
+A Lock (Mutex = **Mut**ual **Ex**clusion) ensures only one thread can execute a section of code at a time. Other threads wait until the lock is released.
 
-In C#, the most common way to achieve mutual exclusion is the `lock` statement, which is syntactic sugar for `Monitor.Enter` and `Monitor.Exit`. Under the hood, `lock` uses a hybrid approach: it first tries a lightweight spin in user mode (for very short waits), and if the lock is still held, it falls back to a kernel-mode wait that puts the thread to sleep. This means short critical sections are very cheap, while long-held locks properly yield the CPU.
+### Basic Usage
 
-The `Mutex` class (capital M) is heavier — it's a kernel object that works across processes. You'd use it when you need to coordinate between separate applications (e.g., ensuring only one instance of your app runs at a time).
+```python
+import threading
 
-### `lock` Statement (Monitor Under the Hood)
+lock = threading.Lock()
 
-```csharp
-public class ThreadSafeCounter
-{
-    private int _count;
-    private readonly object _lock = new();
+# Method 1: with statement (preferred — auto-releases)
+with lock:
+    # critical section — only one thread here at a time
+    shared_data.append(item)
 
-    public void Increment()
-    {
-        lock (_lock)  // Acquires Monitor; releases on exit
-        {
-            _count++;
-        }
-    }
+# Method 2: manual acquire/release
+lock.acquire()
+try:
+    shared_data.append(item)
+finally:
+    lock.release()  # ALWAYS release in finally!
 
-    public int GetCount()
-    {
-        lock (_lock)
-        {
-            return _count;
-        }
-    }
-}
+# Method 3: non-blocking try
+if lock.acquire(blocking=False):
+    try:
+        do_work()
+    finally:
+        lock.release()
+else:
+    # couldn't get the lock — do something else
+    pass
+
+# Method 4: timeout
+if lock.acquire(timeout=5.0):
+    try:
+        do_work()
+    finally:
+        lock.release()
+else:
+    print("Timed out waiting for lock")
 ```
 
-### `Monitor` — Explicit Control
+### Bank Account Example
 
-```csharp
-bool lockTaken = false;
-try
-{
-    Monitor.TryEnter(_lock, TimeSpan.FromSeconds(5), ref lockTaken);
-    if (lockTaken)
-    {
-        // Critical section
-    }
-    else
-    {
-        // Timeout — handle gracefully
-    }
-}
-finally
-{
-    if (lockTaken) Monitor.Exit(_lock);
-}
+```python
+import threading
+
+class BankAccount:
+    def __init__(self, balance=0):
+        self.balance = balance
+        self._lock = threading.Lock()
+
+    def deposit(self, amount):
+        with self._lock:
+            self.balance += amount
+
+    def withdraw(self, amount):
+        with self._lock:
+            if self.balance >= amount:
+                self.balance -= amount
+                return True
+            return False
+
+    def transfer(self, other, amount):
+        # Need to lock BOTH accounts — but be careful of deadlock!
+        # Solution: always lock in a consistent order (by id)
+        first, second = sorted([self, other], key=id)
+        with first._lock:
+            with second._lock:
+                if self.balance >= amount:
+                    self.balance -= amount
+                    other.balance += amount
+                    return True
+                return False
 ```
 
-### `Mutex` Class — Cross-Process Synchronization
+### Rules for Using Locks
 
-```csharp
-// Named mutex — ensures single instance of application
-using var mutex = new Mutex(initiallyOwned: false, name: "Global\\MyAppMutex");
+1. **Keep critical sections SHORT** — hold the lock for as little time as possible
+2. **Always release** — use `with` statement or `try/finally`
+3. **Don't do I/O while holding a lock** — other threads will be blocked for a long time
+4. **Lock on private objects** — don't expose your lock to external code
+5. **Consistent ordering** — if you need multiple locks, always acquire in the same order
 
-if (!mutex.WaitOne(TimeSpan.FromSeconds(3)))
-{
-    Console.WriteLine("Another instance is running!");
-    return;
-}
+---
 
-try
-{
-    Console.WriteLine("Running exclusively...");
-    // Application logic
-}
-finally
-{
-    mutex.ReleaseMutex();
-}
+## 6. RLock (Reentrant Lock)
+
+A regular `Lock` will deadlock if the same thread tries to acquire it twice. An `RLock` (Reentrant Lock) allows the **same thread** to acquire it multiple times.
+
+```python
+import threading
+
+lock = threading.Lock()
+rlock = threading.RLock()
+
+# ❌ DEADLOCK with regular Lock
+def bad():
+    with lock:
+        with lock:  # Same thread tries again — DEADLOCK!
+            print("Never reaches here")
+
+# ✅ Works with RLock
+def good():
+    with rlock:
+        with rlock:  # Same thread — allowed! (count goes to 2)
+            print("This works!")
+        # count drops to 1
+    # count drops to 0 — lock released
 ```
 
-| Feature | `lock` / `Monitor` | `Mutex` |
+### When Do You Need RLock?
+
+When a method that holds a lock calls another method that also needs the same lock:
+
+```python
+class SafeList:
+    def __init__(self):
+        self._items = []
+        self._lock = threading.RLock()  # RLock because methods call each other
+
+    def append(self, item):
+        with self._lock:
+            self._items.append(item)
+
+    def extend(self, items):
+        with self._lock:
+            for item in items:
+                self.append(item)  # Calls append() which also acquires _lock
+                                   # With Lock → deadlock. With RLock → works!
+
+    def size(self):
+        with self._lock:
+            return len(self._items)
+```
+
+| | `Lock` | `RLock` |
 |---|---|---|
-| Scope | Within process | Cross-process |
-| Performance | Fast (user-mode spin) | Slow (kernel object) |
-| Reentrant | Yes | Yes |
-| Timeout | `Monitor.TryEnter` | `WaitOne(timeout)` |
-| Use case | Protecting shared data | Single app instance, file access |
+| Same thread re-acquire | ❌ Deadlock | ✅ Allowed |
+| Performance | Slightly faster | Slightly slower (tracks owner) |
+| When to use | Simple cases | When methods call each other |
 
 ---
 
-## 7. Semaphores
+## 7. Condition Variables
 
-A **Semaphore** is a generalization of a mutex. While a mutex says "only one thread at a time," a semaphore says "up to N threads at a time." It works by maintaining an internal counter. When a thread calls `Wait()`, the counter decrements. If the counter is already 0, the thread blocks until another thread calls `Release()`, which increments the counter.
+A `Condition` variable lets threads **wait** for something to become true, and lets other threads **notify** them when it does.
 
-The classic real-world analogy is a parking lot: if a lot has 50 spaces, 50 cars can enter. The 51st car must wait at the entrance until someone leaves. The semaphore doesn't care *which* car is in *which* space — it only tracks how many spaces are occupied.
+### The Problem Without Conditions
 
-A key difference from mutexes: semaphores have **no ownership**. Any thread can release a semaphore, not just the one that acquired it. This makes them flexible but also means you can accidentally release more times than you acquired, leading to subtle bugs.
-
-- **Binary Semaphore** (count=1): Acts like a mutex but without ownership tracking
-- **Counting Semaphore** (count=N): Allows N concurrent accessors
-
-```csharp
-// Limit to 3 concurrent connections
-var semaphore = new SemaphoreSlim(initialCount: 3, maxCount: 3);
-
-async Task AccessDatabaseAsync(int id)
-{
-    Console.WriteLine($"Task {id}: Waiting for permit...");
-    await semaphore.WaitAsync();  // decrement count (blocks if 0)
-    try
-    {
-        Console.WriteLine($"Task {id}: Connected ({semaphore.CurrentCount} slots left)");
-        await Task.Delay(2000);   // simulate DB work
-    }
-    finally
-    {
-        semaphore.Release();      // increment count
-        Console.WriteLine($"Task {id}: Released");
-    }
-}
-
-// Launch 10 tasks — only 3 run concurrently
-var tasks = Enumerable.Range(1, 10)
-    .Select(i => AccessDatabaseAsync(i));
-await Task.WhenAll(tasks);
+```python
+# ❌ Busy waiting — wastes CPU spinning endlessly
+while not data_ready:
+    pass  # Checking over and over — terrible!
+process(data)
 ```
 
-### Rate Limiting with Semaphore
+### The Solution: Condition Variables
 
-```csharp
-public class RateLimiter
-{
-    private readonly SemaphoreSlim _semaphore;
-    private readonly int _maxRequests;
-    private readonly TimeSpan _window;
+```python
+import threading
+import time
 
-    public RateLimiter(int maxRequests, TimeSpan window)
-    {
-        _maxRequests = maxRequests;
-        _window = window;
-        _semaphore = new SemaphoreSlim(maxRequests, maxRequests);
-    }
+condition = threading.Condition()
+data = None
+data_ready = False
 
-    public async Task<T> ExecuteAsync<T>(Func<Task<T>> action)
-    {
-        await _semaphore.WaitAsync();
-        try
-        {
-            return await action();
-        }
-        finally
-        {
-            // Release after window expires to enforce rate
-            _ = Task.Delay(_window).ContinueWith(_ => _semaphore.Release());
-        }
-    }
-}
+def producer():
+    global data, data_ready
+    time.sleep(2)  # Simulate slow work
+
+    with condition:
+        data = "Hello from producer!"
+        data_ready = True
+        condition.notify()  # Wake up ONE waiting thread
+
+def consumer():
+    global data, data_ready
+
+    with condition:
+        while not data_ready:       # ALWAYS use while, not if
+            condition.wait()        # Release lock + sleep (atomic)
+                                    # Re-acquires lock when woken up
+        print(f"Got: {data}")
+
+t1 = threading.Thread(target=consumer)
+t2 = threading.Thread(target=producer)
+t1.start()
+t2.start()
+t1.join()
+t2.join()
 ```
 
-| Feature | `Mutex` | `Semaphore` |
+### How `condition.wait()` Works (3 Steps, Atomic)
+
+```
+1. Release the lock          ← so other threads can acquire it
+2. Sleep the thread          ← no CPU wasted
+3. When notified:
+   - Wake up
+   - Re-acquire the lock     ← back in critical section
+   - Continue after wait()
+```
+
+### Key Methods
+
+| Method | What It Does |
+|--------|--------------|
+| `condition.wait()` | Release lock + sleep until notified |
+| `condition.wait(timeout=5)` | Wait at most 5 seconds |
+| `condition.notify()` | Wake ONE waiting thread |
+| `condition.notify_all()` | Wake ALL waiting threads |
+
+### Why `while` Not `if`?
+
+```python
+# ❌ BAD — spurious wakeup can cause bugs
+with condition:
+    if not data_ready:       # If woken up spuriously, skips wait
+        condition.wait()     # and processes invalid data!
+    process(data)
+
+# ✅ GOOD — re-checks after every wakeup
+with condition:
+    while not data_ready:    # If woken up spuriously, checks again
+        condition.wait()     # and goes back to sleep
+    process(data)
+```
+
+**Interview Tip:** Interviewers specifically check if you use `while` with `wait()`. Always explain: "I use `while` instead of `if` because of spurious wakeups."
+
+---
+
+## 8. Semaphores
+
+A Semaphore allows up to **N threads** to enter a section simultaneously.
+
+- `Lock` = Semaphore with N=1
+- `Semaphore(5)` = allows 5 threads at once
+
+```python
+import threading
+import time
+
+# Allow at most 3 concurrent database connections
+db_semaphore = threading.Semaphore(3)
+
+def query_database(query_id):
+    print(f"Query {query_id}: Waiting for connection...")
+    with db_semaphore:                  # Decrements count (blocks if 0)
+        print(f"Query {query_id}: Connected! (executing)")
+        time.sleep(2)                   # Simulate query
+        print(f"Query {query_id}: Done")
+    # Auto-releases — increments count
+
+# Launch 10 queries — only 3 run at a time
+threads = [threading.Thread(target=query_database, args=(i,)) for i in range(10)]
+for t in threads: t.start()
+for t in threads: t.join()
+```
+
+### BoundedSemaphore — Safer Version
+
+`BoundedSemaphore` raises an error if you release more times than you acquire. Use it to catch bugs.
+
+```python
+sem = threading.BoundedSemaphore(3)
+
+sem.release()  # ValueError: Semaphore released too many times
+# Regular Semaphore would silently allow it — dangerous!
+```
+
+### Semaphore vs Lock
+
+| | Lock | Semaphore |
 |---|---|---|
-| Max concurrent | 1 | N |
-| Ownership | Thread that locked must unlock | Any thread can release |
-| Reentrant | Yes | No (each Wait decrements) |
-| Use case | Exclusive access | Connection pools, rate limiting |
+| Max threads inside | 1 | N |
+| Use case | Mutual exclusion | Connection pools, rate limiting |
+| Who can release? | Only the holder | Any thread |
 
 ---
 
-## 8. Condition Variables
+## 9. Events
 
-A **condition variable** solves a very specific problem: *"I'm holding a lock, but I can't proceed until some condition is true. I need to release the lock, sleep, and wake up when the condition might have changed — all without missing a signal."*
+An `Event` is the simplest signaling mechanism — a boolean flag that threads can wait on.
 
-Without condition variables, you'd have to do **busy waiting** (spinning in a loop checking the condition), which wastes CPU. Condition variables let a thread efficiently sleep and get woken up only when another thread signals that the condition may have changed.
+```python
+import threading
+import time
 
-The key operation is `Monitor.Wait(_lock)` which does three things **atomically**: (1) releases the lock, (2) puts the thread to sleep, (3) re-acquires the lock when woken up. This atomicity is crucial — if releasing the lock and sleeping were separate steps, another thread could change the condition and signal *between* those steps, causing the signal to be lost forever.
+start_event = threading.Event()
 
-In C#, `Monitor.Wait` / `Monitor.Pulse` / `Monitor.PulseAll` serve this purpose. `Pulse` wakes one waiting thread; `PulseAll` wakes all of them (each must still re-acquire the lock before proceeding).
+def worker(name):
+    print(f"{name}: Waiting for signal...")
+    start_event.wait()       # Block until event is set
+    print(f"{name}: GO!")
 
-```csharp
-public class BoundedBuffer<T>
-{
-    private readonly Queue<T> _queue = new();
-    private readonly int _capacity;
-    private readonly object _lock = new();
+# Create workers that all wait for the starting gun
+threads = [threading.Thread(target=worker, args=(f"Runner-{i}",)) for i in range(5)]
+for t in threads: t.start()
 
-    public BoundedBuffer(int capacity) { _capacity = capacity; }
+time.sleep(2)
+print("Ready... Set...")
+start_event.set()   # All 5 threads wake up simultaneously
 
-    public void Enqueue(T item)
-    {
-        lock (_lock)
-        {
-            // Wait while buffer is full
-            while (_queue.Count >= _capacity)
-                Monitor.Wait(_lock);  // release lock + sleep atomically
-
-            _queue.Enqueue(item);
-            Monitor.PulseAll(_lock);  // wake all waiters
-        }
-    }
-
-    public T Dequeue()
-    {
-        lock (_lock)
-        {
-            // Wait while buffer is empty
-            while (_queue.Count == 0)
-                Monitor.Wait(_lock);
-
-            T item = _queue.Dequeue();
-            Monitor.PulseAll(_lock);  // wake producers waiting on full
-            return item;
-        }
-    }
-}
+for t in threads: t.join()
 ```
 
-### `ManualResetEventSlim` / `AutoResetEvent` — Event-Based Signaling
+### Event Methods
 
-```csharp
-// ManualResetEventSlim — stays signaled until manually reset
-var gate = new ManualResetEventSlim(initialState: false);
+| Method | What It Does |
+|--------|--------------|
+| `event.set()` | Set the flag — all waiters wake up |
+| `event.clear()` | Reset the flag — future waiters will block |
+| `event.wait()` | Block until flag is set |
+| `event.wait(timeout=5)` | Wait at most 5 seconds, returns `True` if set |
+| `event.is_set()` | Check if flag is set (non-blocking) |
 
-// Worker thread
-Task.Run(() =>
-{
-    Console.WriteLine("Worker: Waiting for signal...");
-    gate.Wait();                // blocks until Set()
-    Console.WriteLine("Worker: Proceeding!");
-});
+### Event vs Condition
 
-Thread.Sleep(2000);
-gate.Set();   // signal ALL waiters — gate stays open
-// gate.Reset(); // must manually close
-
-// AutoResetEvent — auto-resets after releasing ONE waiter
-var turnstile = new AutoResetEvent(initialState: false);
-turnstile.Set();      // releases exactly one waiting thread, then resets
-```
-
-| Mechanism | Releases | Auto-Reset | Use Case |
-|---|---|---|---|
-| `Monitor.Pulse` | One waiter | N/A | Condition variables |
-| `Monitor.PulseAll` | All waiters | N/A | Broadcast notification |
-| `AutoResetEvent` | One waiter | Yes | Turnstile / handoff |
-| `ManualResetEventSlim` | All waiters | No | Gate / barrier |
-
-**Interview Tip:** Always use `while` (not `if`) when checking conditions after `Wait` — **spurious wakeups** can occur.
-
----
-
-## 9. Coarse-Grained vs Fine-Grained Locking
-
-When you have shared data that needs protection, you face a fundamental design decision: **how many locks should you use?**
-
-**Coarse-grained locking** uses a single lock to protect everything. It's simple and hard to get wrong, but it creates a bottleneck — every thread must wait for the same lock, even if they're accessing completely unrelated data. Imagine a library with one door: only one person can enter or leave at a time, even though there are thousands of books on different floors.
-
-**Fine-grained locking** uses multiple locks, each protecting a subset of the data. This allows threads working on different subsets to proceed in parallel. The library now has one door per floor — people on different floors don't block each other. However, this introduces complexity: you must be careful about lock ordering (to avoid deadlocks) and ensuring that operations spanning multiple locks are handled correctly.
-
-The technique of splitting one lock into multiple locks based on data partitioning is called **lock striping**. `ConcurrentDictionary` in .NET uses this internally — it maintains an array of locks, and each key maps to a specific lock based on its hash code.
-
-### Coarse-Grained — One Lock for Everything
-
-```csharp
-// ❌ Coarse-grained — single lock bottleneck
-public class CoarseGrainedCache
-{
-    private readonly Dictionary<string, object> _cache = new();
-    private readonly object _lock = new();
-
-    public object Get(string key)
-    {
-        lock (_lock) { return _cache.GetValueOrDefault(key); }
-    }
-
-    public void Set(string key, object value)
-    {
-        lock (_lock) { _cache[key] = value; }
-    }
-
-    public void Delete(string key)
-    {
-        lock (_lock) { _cache.Remove(key); }
-    }
-}
-```
-
-### Fine-Grained — Lock Striping
-
-```csharp
-// ✅ Fine-grained — lock striping for higher throughput
-public class StripedCache<TKey, TValue>
-{
-    private readonly int _stripeCount;
-    private readonly Dictionary<TKey, TValue>[] _buckets;
-    private readonly object[] _locks;
-
-    public StripedCache(int stripeCount = 16)
-    {
-        _stripeCount = stripeCount;
-        _buckets = new Dictionary<TKey, TValue>[stripeCount];
-        _locks = new object[stripeCount];
-
-        for (int i = 0; i < stripeCount; i++)
-        {
-            _buckets[i] = new Dictionary<TKey, TValue>();
-            _locks[i] = new object();
-        }
-    }
-
-    private int GetStripe(TKey key) =>
-        (key.GetHashCode() & 0x7FFFFFFF) % _stripeCount;
-
-    public TValue Get(TKey key)
-    {
-        int stripe = GetStripe(key);
-        lock (_locks[stripe])
-        {
-            return _buckets[stripe].GetValueOrDefault(key);
-        }
-    }
-
-    public void Set(TKey key, TValue value)
-    {
-        int stripe = GetStripe(key);
-        lock (_locks[stripe])
-        {
-            _buckets[stripe][key] = value;
-        }
-    }
-}
-```
-
-| Aspect | Coarse-Grained | Fine-Grained |
+| | Event | Condition |
 |---|---|---|
-| **Complexity** | Simple | Complex |
-| **Contention** | High (all threads compete for one lock) | Low (threads hit different stripes) |
-| **Deadlock risk** | Low | Higher (multiple locks) |
-| **Throughput** | Low under load | High under load |
-| **When to use** | Low contention, simple data | High contention, partitionable data |
-
-**Interview Tip:** `ConcurrentDictionary` in .NET uses lock striping internally. Default stripe count = `Environment.ProcessorCount * 4`.
+| Has a lock? | No | Yes (built-in) |
+| Can protect data? | No | Yes |
+| Complexity | Simple | More powerful |
+| Use when | Just signaling | Signaling + data protection |
 
 ---
 
-## 10. Reentrant Locks
+## 10. Barriers
 
-A **reentrant lock** allows the same thread to acquire the lock multiple times without deadlocking itself. It maintains a count and releases only when the count drops to zero.
+A `Barrier` makes N threads all wait for each other at a checkpoint before proceeding.
 
-```csharp
-// C# lock / Monitor is reentrant by default
-public class ReentrantExample
-{
-    private readonly object _lock = new();
-    private int _value;
+```python
+import threading
 
-    public void MethodA()
-    {
-        lock (_lock)         // acquire (count=1)
-        {
-            _value++;
-            MethodB();       // same thread re-enters (count=2)
-        }                    // release (count=1, then 0)
-    }
+barrier = threading.Barrier(3)  # Wait for 3 threads
 
-    public void MethodB()
-    {
-        lock (_lock)         // same thread — doesn't deadlock!
-        {
-            _value *= 2;
-        }
-    }
-}
+def phase_worker(name):
+    # Phase 1
+    print(f"{name}: Phase 1 done")
+    barrier.wait()      # All 3 must reach here before any continues
+
+    # Phase 2
+    print(f"{name}: Phase 2 done")
+    barrier.wait()      # Barrier is reusable!
+
+    # Phase 3
+    print(f"{name}: Phase 3 done")
+
+threads = [threading.Thread(target=phase_worker, args=(f"Worker-{i}",)) for i in range(3)]
+for t in threads: t.start()
+for t in threads: t.join()
 ```
 
-### Custom Reentrant Lock with Timeout
-
-```csharp
-public class ReentrantLockWithTimeout
-{
-    private readonly object _lock = new();
-    private int _ownerThreadId = -1;
-    private int _recursionCount;
-
-    public bool TryAcquire(TimeSpan timeout)
-    {
-        int currentId = Environment.CurrentManagedThreadId;
-
-        lock (_lock)
-        {
-            if (_ownerThreadId == currentId)
-            {
-                _recursionCount++;
-                return true;
-            }
-
-            DateTime deadline = DateTime.UtcNow + timeout;
-            while (_ownerThreadId != -1)
-            {
-                var remaining = deadline - DateTime.UtcNow;
-                if (remaining <= TimeSpan.Zero) return false;
-                Monitor.Wait(_lock, remaining);
-            }
-
-            _ownerThreadId = currentId;
-            _recursionCount = 1;
-            return true;
-        }
-    }
-
-    public void Release()
-    {
-        lock (_lock)
-        {
-            if (_ownerThreadId != Environment.CurrentManagedThreadId)
-                throw new InvalidOperationException("Current thread does not own the lock");
-
-            if (--_recursionCount == 0)
-            {
-                _ownerThreadId = -1;
-                Monitor.Pulse(_lock);
-            }
-        }
-    }
-}
+Output (phases never overlap):
+```
+Worker-0: Phase 1 done
+Worker-2: Phase 1 done
+Worker-1: Phase 1 done
+← all 3 reached barrier, now proceed →
+Worker-1: Phase 2 done
+Worker-0: Phase 2 done
+Worker-2: Phase 2 done
+...
 ```
 
-| Lock Type | Reentrant? | Notes |
+---
+
+## 11. Thread-Safe Data Structures
+
+Python provides one built-in thread-safe data structure — `queue.Queue`. For everything else, you protect with locks.
+
+### queue.Queue — Thread-Safe Queue
+
+```python
+import queue
+import threading
+
+q = queue.Queue(maxsize=10)  # Bounded queue (0 = unlimited)
+
+def producer():
+    for i in range(20):
+        q.put(i)            # Blocks if full
+        print(f"Produced: {i}")
+
+def consumer():
+    while True:
+        item = q.get()      # Blocks if empty
+        print(f"Consumed: {item}")
+        q.task_done()       # Signal that item is processed
+
+t1 = threading.Thread(target=producer)
+t2 = threading.Thread(target=consumer, daemon=True)
+t1.start()
+t2.start()
+t1.join()
+q.join()  # Wait until all items are processed (all task_done() called)
+```
+
+### Queue Variants
+
+| Queue | Order | Use Case |
+|-------|-------|----------|
+| `queue.Queue` | FIFO | Standard producer-consumer |
+| `queue.LifoQueue` | LIFO (stack) | DFS-like processing |
+| `queue.PriorityQueue` | Lowest first | Task scheduling by priority |
+
+```python
+# Priority Queue — lowest value comes out first
+pq = queue.PriorityQueue()
+pq.put((3, "low priority"))
+pq.put((1, "high priority"))
+pq.put((2, "medium priority"))
+
+print(pq.get())  # (1, 'high priority')
+print(pq.get())  # (2, 'medium priority')
+```
+
+### collections.deque vs queue.Queue
+
+| | `collections.deque` | `queue.Queue` |
 |---|---|---|
-| `lock` / `Monitor` | ✅ Yes | Default in C# |
-| `Mutex` | ✅ Yes | Cross-process, slower |
-| `SemaphoreSlim` | ❌ No | Count-based, no ownership |
-| `SpinLock` | ❌ No | Lightweight, short critical sections |
-| `ReaderWriterLockSlim` | ✅ Configurable | `LockRecursionPolicy.SupportsRecursion` |
+| **Thread-safe?** | Individual ops atomic, no blocking | Yes — has internal Lock, blocks |
+| **Blocking?** | No — raises `IndexError` if empty | Yes — `get()` waits for items |
+| **Use case** | DSA / single-threaded code | Multi-threaded producer-consumer |
+| **Performance** | Faster (no locking overhead) | Slower (locking cost) |
+
+**Rule:** Use `collections.deque` for algorithms. Use `queue.Queue` for threads.
 
 ---
 
-## 11. Try-Lock
+## 12. Deadlock, Livelock & Starvation
 
-**Try-Lock** is a non-blocking attempt to acquire a lock. Instead of waiting forever (which risks deadlock), you say "try to get this lock within 100ms — if you can't, give up and I'll handle it differently." This gives you an escape hatch from situations where blocking would be dangerous.
+### Deadlock
 
-Try-lock is particularly useful for **deadlock avoidance**. Consider the classic problem of transferring money between two accounts: you need to lock both accounts, but two concurrent transfers (A→B and B→A) can deadlock. With try-lock, if you can't get the second lock, you release the first and retry — no deadlock possible.
+Two threads each hold a lock the other needs. Neither can proceed. **Program hangs forever.**
 
-In C#, `Monitor.TryEnter` provides try-lock semantics. You can specify a timeout — if the lock isn't available within that time, it returns `false` instead of blocking forever.
+```python
+import threading
+import time
 
-```csharp
-// Monitor.TryEnter — try-lock in C#
-public class TryLockExample
-{
-    private readonly object _lock = new();
-    private int _resource;
+lock_a = threading.Lock()
+lock_b = threading.Lock()
 
-    public bool TryUpdate(int value, TimeSpan timeout)
-    {
-        bool lockTaken = false;
-        try
-        {
-            Monitor.TryEnter(_lock, timeout, ref lockTaken);
-            if (lockTaken)
-            {
-                _resource = value;
-                return true;
-            }
-            else
-            {
-                Console.WriteLine("Could not acquire lock — skipping");
-                return false;
-            }
-        }
-        finally
-        {
-            if (lockTaken) Monitor.Exit(_lock);
-        }
-    }
-}
+def thread_1():
+    with lock_a:                # Holds A
+        time.sleep(0.1)
+        with lock_b:            # Waits for B... forever
+            print("Thread 1")
+
+def thread_2():
+    with lock_b:                # Holds B
+        time.sleep(0.1)
+        with lock_a:            # Waits for A... forever
+            print("Thread 2")
+
+# DEADLOCK — both threads wait forever
 ```
 
-### Deadlock Avoidance with Try-Lock
+### 4 Conditions for Deadlock (ALL must be true)
 
-```csharp
-// Acquire two locks without deadlocking
-public bool TransferMoney(Account from, Account to, decimal amount)
-{
-    bool lock1 = false, lock2 = false;
-    try
-    {
-        lock1 = Monitor.TryEnter(from.Lock, TimeSpan.FromSeconds(1));
-        lock2 = Monitor.TryEnter(to.Lock, TimeSpan.FromSeconds(1));
+| Condition | Meaning | How to Break It |
+|-----------|---------|-----------------|
+| **Mutual exclusion** | Only one thread can hold the lock | Use lock-free structures |
+| **Hold and wait** | Thread holds one lock, waits for another | Acquire all locks at once |
+| **No preemption** | Can't force-take a lock | Use timeouts |
+| **Circular wait** | A waits for B, B waits for A | Always lock in same order |
 
-        if (lock1 && lock2)
-        {
-            if (from.Balance >= amount)
-            {
-                from.Balance -= amount;
-                to.Balance += amount;
-                return true;
-            }
-        }
-        return false;  // retry later
-    }
-    finally
-    {
-        if (lock2) Monitor.Exit(to.Lock);
-        if (lock1) Monitor.Exit(from.Lock);
-    }
-}
+### Fix: Consistent Lock Ordering
+
+```python
+def transfer(account_a, account_b, amount):
+    # Always lock the account with the smaller id first
+    first, second = sorted([account_a, account_b], key=lambda a: a.id)
+
+    with first.lock:
+        with second.lock:
+            if account_a.balance >= amount:
+                account_a.balance -= amount
+                account_b.balance += amount
 ```
 
-### SpinLock — Try-Lock for Very Short Critical Sections
+### Fix: Timeout
 
-```csharp
-private SpinLock _spinLock = new();
-
-public void CriticalSection()
-{
-    bool lockTaken = false;
-    try
-    {
-        _spinLock.Enter(ref lockTaken);  // spins in user-mode (no context switch)
-        // Very short critical section only!
-    }
-    finally
-    {
-        if (lockTaken) _spinLock.Exit();
-    }
-}
+```python
+def safe_transfer():
+    if lock_a.acquire(timeout=1):
+        try:
+            if lock_b.acquire(timeout=1):
+                try:
+                    do_transfer()
+                finally:
+                    lock_b.release()
+            else:
+                print("Could not get lock_b — retry later")
+        finally:
+            lock_a.release()
+    else:
+        print("Could not get lock_a — retry later")
 ```
 
-**Interview Tip:** Use try-lock to avoid deadlocks in lock-ordering problems. If you can't get all needed locks, release everything and retry with backoff.
+### Livelock
+
+Threads are running but making no progress — they keep reacting to each other in a loop and never move forward.
+
+```python
+# ❌ Livelock — both threads keep "being polite"
+def polite_thread(my_lock, other_lock, name):
+    while True:
+        my_lock.acquire()
+        if not other_lock.acquire(blocking=False):
+            my_lock.release()       # "After you!"
+            time.sleep(0.001)       # Try again — but so does the other thread!
+            continue
+        # ... never reaches here
+```
+
+**Fix:** Add random backoff to break symmetry.
+
+```python
+import random
+
+def fixed_thread(my_lock, other_lock, name):
+    while True:
+        my_lock.acquire()
+        if not other_lock.acquire(blocking=False):
+            my_lock.release()
+            time.sleep(random.uniform(0.001, 0.01))  # Random backoff!
+            continue
+        break  # Got both locks!
+```
+
+### Starvation
+
+One thread never gets the lock because other threads keep grabbing it first.
+
+**Fix:** Use fair locks (FIFO ordering) or `queue.Queue` which is inherently fair.
+
+### Summary
+
+| Problem | Threads Running? | Progress? | Fix |
+|---------|-----------------|-----------|-----|
+| **Deadlock** | No (blocked) | None | Lock ordering, timeout |
+| **Livelock** | Yes (spinning) | None | Random backoff |
+| **Starvation** | Some are | Some, not all | Fair scheduling, queues |
 
 ---
 
-## 12. Compare-and-Swap (CAS)
+## 13. Thread Pool (concurrent.futures)
 
-**Compare-and-Swap (CAS)** is the fundamental building block of all lock-free programming. It's a CPU instruction (not a software construct) that performs three things atomically: read a memory location, compare it to an expected value, and if they match, write a new value. If they don't match, it means another thread modified the value between your read and your write — so you read again and retry.
+Creating threads is expensive. A thread pool keeps a fixed set of threads and reuses them.
 
-Why is CAS so important? Locks are "pessimistic" — they assume contention will happen and prevent it upfront. CAS is "optimistic" — it assumes contention is rare and just retries when it does happen. Under low contention, CAS avoids the overhead of acquiring/releasing locks entirely. Under high contention, the retry loop can spin, so CAS works best when critical sections are very short.
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
-In C#, `Interlocked.CompareExchange` provides CAS. All `Interlocked` methods (`Increment`, `Add`, `Exchange`) are built on CAS internally. Every `ConcurrentDictionary`, `ConcurrentQueue`, and other lock-free data structure uses CAS at its core.
+def fetch_url(url):
+    time.sleep(1)  # Simulate network request
+    return f"Data from {url}"
 
-```
-CAS(location, expected, newValue):
-    atomically {
-        if (*location == expected) {
-            *location = newValue;
-            return true;   // success
-        }
-        return false;      // someone else changed it — retry
-    }
-```
+urls = [f"https://api.example.com/{i}" for i in range(10)]
 
-### C# — `Interlocked.CompareExchange`
+# Thread pool with 4 workers — processes 10 URLs using only 4 threads
+with ThreadPoolExecutor(max_workers=4) as executor:
+    # Submit all tasks
+    future_to_url = {executor.submit(fetch_url, url): url for url in urls}
 
-```csharp
-// Lock-free counter using CAS
-public class LockFreeCounter
-{
-    private int _count;
-
-    public void Increment()
-    {
-        int original, updated;
-        do
-        {
-            original = _count;                    // read current
-            updated = original + 1;               // compute new value
-        } while (Interlocked.CompareExchange(ref _count, updated, original) != original);
-        // If _count changed between read and CAS → retry
-    }
-
-    public int Value => Volatile.Read(ref _count);
-}
+    # Process results as they complete (not in submission order)
+    for future in as_completed(future_to_url):
+        url = future_to_url[future]
+        try:
+            result = future.result()
+            print(f"{url}: {result}")
+        except Exception as e:
+            print(f"{url}: Error — {e}")
 ```
 
-### Lock-Free Stack (Treiber Stack)
+### map() — Simpler API
 
-```csharp
-public class LockFreeStack<T>
-{
-    private class Node
-    {
-        public T Value;
-        public Node Next;
-        public Node(T value) { Value = value; }
-    }
-
-    private Node _head;
-
-    public void Push(T value)
-    {
-        var node = new Node(value);
-        Node original;
-        do
-        {
-            original = _head;
-            node.Next = original;
-        } while (Interlocked.CompareExchange(ref _head, node, original) != original);
-    }
-
-    public bool TryPop(out T value)
-    {
-        Node original;
-        do
-        {
-            original = _head;
-            if (original == null) { value = default; return false; }
-        } while (Interlocked.CompareExchange(ref _head, original.Next, original) != original);
-
-        value = original.Value;
-        return true;
-    }
-}
+```python
+with ThreadPoolExecutor(max_workers=4) as executor:
+    # Results come back in input order (unlike as_completed)
+    results = executor.map(fetch_url, urls)
+    for result in results:
+        print(result)
 ```
 
-### ABA Problem
+### ProcessPoolExecutor — For CPU-Bound Work
 
-The ABA problem is a subtle pitfall of CAS. Suppose Thread 1 reads a value `A`, gets preempted, and Thread 2 changes the value to `B`, then back to `A`. When Thread 1 resumes, its CAS succeeds because the value is still `A` — but the *meaning* of that `A` may have changed. For example, in a lock-free linked list, a node might have been removed and a completely different node allocated at the same memory address.
+```python
+from concurrent.futures import ProcessPoolExecutor
 
-In managed languages like C#, the ABA problem is largely mitigated by garbage collection — objects aren't reused at the same memory address while any reference exists. But in unmanaged code (C/C++), it's a real danger that requires tagged pointers or hazard pointers to solve.
+def cpu_heavy(n):
+    return sum(i * i for i in range(n))
 
+# Uses separate processes — bypasses GIL
+with ProcessPoolExecutor(max_workers=4) as executor:
+    results = executor.map(cpu_heavy, [10**6, 10**6, 10**6, 10**6])
+    for r in results:
+        print(r)
 ```
-Thread 1: Reads A
-Thread 2: Changes A → B → A
-Thread 1: CAS succeeds (sees A) — but the state is different!
-```
 
-**Fix:** Use a version counter alongside the value, or use immutable nodes (as in managed languages like C# where GC prevents reuse).
+### When to Use What
 
-### Interlocked Operations in C#
-
-| Method | Description |
-|---|---|
-| `Interlocked.Increment(ref x)` | Atomic `x++` |
-| `Interlocked.Decrement(ref x)` | Atomic `x--` |
-| `Interlocked.Add(ref x, value)` | Atomic `x += value` |
-| `Interlocked.Exchange(ref x, newVal)` | Atomic swap, returns old |
-| `Interlocked.CompareExchange(ref x, newVal, expected)` | CAS, returns old |
-| `Interlocked.Read(ref long x)` | Atomic 64-bit read on 32-bit |
+| Work Type | Use | Why |
+|-----------|-----|-----|
+| I/O-bound (network, disk) | `ThreadPoolExecutor` | GIL released during I/O |
+| CPU-bound (computation) | `ProcessPoolExecutor` | Separate GIL per process |
+| High-concurrency I/O | `asyncio` | Even lighter than threads |
 
 ---
 
-## 13. Deadlock
+## 14. async/await (asyncio)
 
-A **deadlock** is the worst-case failure mode in concurrent programming: two or more threads are permanently frozen, each waiting for a resource that the other holds. No thread can make progress, and unlike a crash, the program doesn't terminate — it just hangs silently. In production, deadlocks can be incredibly hard to diagnose because the system appears to be running (CPU may be low, no errors in logs) but stops processing requests.
+`asyncio` is Python's way to handle thousands of concurrent I/O operations with a **single thread**. It's NOT multithreading — it's cooperative multitasking.
 
-The classic example is two bank accounts: Thread 1 locks Account A and tries to lock Account B, while Thread 2 locks Account B and tries to lock Account A. Neither can proceed, and neither will ever release its lock.
+`async`/`await` uses a single thread with an **event loop**. When a task hits `await`, it pauses and lets other tasks run. When the awaited result is ready, the task resumes. No threads are created.
 
-Deadlock was formally studied by Edward Coffman Jr. in 1971, who identified four conditions that must ALL hold simultaneously for a deadlock to occur. Breaking any single condition prevents deadlock entirely.
+```python
+import asyncio
 
-### Four Necessary Conditions (Coffman Conditions)
+async def fetch_data(name, seconds):
+    print(f"{name}: Starting request")
+    await asyncio.sleep(seconds)    # "I'm waiting — others can run"
+    print(f"{name}: Got response")
+    return f"Data from {name}"
 
-| Condition | Description |
-|---|---|
-| **Mutual Exclusion** | Resource can't be shared |
-| **Hold and Wait** | Thread holds one lock and waits for another |
-| **No Preemption** | Locks can't be forcibly taken |
-| **Circular Wait** | A → B → C → A cycle |
+async def main():
+    # Launch 3 "requests" concurrently — single thread!
+    results = await asyncio.gather(
+        fetch_data("API-1", 2),
+        fetch_data("API-2", 1),
+        fetch_data("API-3", 3),
+    )
+    print(results)
 
-**Break ANY one condition to prevent deadlock.**
-
-```csharp
-// ❌ Classic deadlock
-var lockA = new object();
-var lockB = new object();
-
-// Thread 1: locks A then B
-Task.Run(() => { lock (lockA) { Thread.Sleep(100); lock (lockB) { } } });
-
-// Thread 2: locks B then A
-Task.Run(() => { lock (lockB) { Thread.Sleep(100); lock (lockA) { } } });
-// DEADLOCK — both threads wait forever
+asyncio.run(main())
 ```
 
-### Prevention Strategies
-
-```csharp
-// Strategy 1: Lock ordering — always acquire in consistent order
-public void Transfer(Account from, Account to, decimal amount)
-{
-    // Order by ID to prevent circular wait
-    var first  = from.Id < to.Id ? from : to;
-    var second = from.Id < to.Id ? to : from;
-
-    lock (first.Lock)
-    {
-        lock (second.Lock)
-        {
-            from.Balance -= amount;
-            to.Balance += amount;
-        }
-    }
-}
-
-// Strategy 2: Timeout (break "no preemption")
-bool lockTaken = false;
-Monitor.TryEnter(lockA, TimeSpan.FromSeconds(1), ref lockTaken);
-if (!lockTaken) { /* release all locks, retry */ }
-
-// Strategy 3: Single lock (break "hold and wait")
-lock (_globalLock)
-{
-    // Access all resources under one lock
-}
+Output:
+```
+API-1: Starting request
+API-2: Starting request
+API-3: Starting request
+API-2: Got response      ← 1 second
+API-1: Got response      ← 2 seconds
+API-3: Got response      ← 3 seconds (total time: ~3s, not 6s)
 ```
 
-### Deadlock Detection in .NET
+### async vs threading — When to Use
 
-```csharp
-// Using WaitHandle.WaitAll with timeout
-bool acquired = WaitHandle.WaitAll(
-    new WaitHandle[] { mutex1, mutex2 },
-    timeout: TimeSpan.FromSeconds(10));
-
-if (!acquired)
-    Console.WriteLine("Potential deadlock detected!");
-```
-
----
-
-## 14. Livelock
-
-A **livelock** is deadlock's evil twin. In a deadlock, threads are stuck doing nothing. In a livelock, threads are *actively running* but making no progress — they keep reacting to each other in a loop, like two people in a hallway who keep stepping aside to let the other pass, but always step the same way.
-
-Livelocks often arise from well-intentioned deadlock avoidance: if two threads detect potential deadlock and "politely" release their resources and retry, they might release and retry in perfect synchronization forever. The fix is to introduce **randomness** (random backoff) to break the symmetry.
-
-Livelocks are harder to detect than deadlocks because threads are running and consuming CPU. You'll see high CPU usage but no actual work being done. In monitoring, it looks like the system is busy but throughput is zero.
-
-```
-Analogy: Two people in a hallway keep stepping aside for each other
-         — both move but neither passes.
-```
-
-```csharp
-// ❌ Livelock — both threads keep yielding to each other
-public class LivelockExample
-{
-    private bool _resourceAAvailable = true;
-    private bool _resourceBAvailable = true;
-
-    public void Thread1Work()
-    {
-        while (true)
-        {
-            lock (this)
-            {
-                if (_resourceAAvailable)
-                {
-                    _resourceAAvailable = false;
-
-                    if (!_resourceBAvailable)
-                    {
-                        // "Politely" release A and retry
-                        _resourceAAvailable = true;
-                        continue; // LIVELOCK — keeps releasing
-                    }
-                    _resourceBAvailable = false;
-                    break;
-                }
-            }
-        }
-    }
-}
-```
-
-### Fix — Random Backoff
-
-```csharp
-// ✅ Add random jitter to break symmetry
-public async Task<bool> TryAcquireBothAsync()
-{
-    var rng = new Random();
-    for (int attempt = 0; attempt < 10; attempt++)
-    {
-        bool gotA = Monitor.TryEnter(_lockA, TimeSpan.FromMilliseconds(50));
-        if (gotA)
-        {
-            bool gotB = Monitor.TryEnter(_lockB, TimeSpan.FromMilliseconds(50));
-            if (gotB) return true;
-
-            Monitor.Exit(_lockA); // release and retry
-        }
-
-        // Random backoff to break symmetry
-        await Task.Delay(rng.Next(10, 100));
-    }
-    return false;
-}
-```
-
-| | Deadlock | Livelock | Starvation |
-|---|---|---|---|
-| **Threads running?** | No (blocked) | Yes (spinning) | Some are |
-| **Progress?** | None | None | Some threads, not others |
-| **Detection** | Thread dumps | CPU at 100% | Monitoring wait times |
-| **Fix** | Lock ordering, timeout | Random backoff | Fair locks, priority |
-
----
-
-## 15. Signaling Pattern
-
-The **signaling pattern** is how threads communicate "I'm done" or "you can proceed now" to other threads. Instead of threads constantly polling a variable to check if something happened (which wastes CPU), signaling lets a thread sleep efficiently and be woken up only when the event it's waiting for actually occurs.
-
-.NET provides several signaling primitives, each designed for a specific coordination scenario:
-- **ManualResetEventSlim**: A gate that opens and stays open. All waiting threads pass through. You must manually close it.
-- **AutoResetEvent**: A turnstile that lets exactly one thread through per signal, then automatically closes.
-- **CountdownEvent**: Waits for N signals before proceeding — perfect for "wait for all workers to finish."
-- **Barrier**: Synchronizes threads at checkpoints — all threads must reach the barrier before any can proceed to the next phase.
-
-These are more specialized than `Monitor.Wait/Pulse` and convey clearer intent in code.
-
-Threads coordinate by **signaling** — one thread notifies another that a condition is met.
-
-### ManualResetEvent — Gate Pattern
-
-```csharp
-// Gate: block multiple threads until initialization is complete
-public class ServiceInitializer
-{
-    private static readonly ManualResetEventSlim _ready = new(false);
-
-    public static void Initialize()
-    {
-        Task.Run(() =>
-        {
-            Console.WriteLine("Loading config...");
-            Thread.Sleep(3000);
-            Console.WriteLine("Ready!");
-            _ready.Set();  // open the gate — all waiters proceed
-        });
-    }
-
-    public static void WaitForReady()
-    {
-        _ready.Wait();  // blocks until Set() is called
-    }
-}
-```
-
-### CountdownEvent — Fan-Out/Fan-In
-
-```csharp
-// Wait for N tasks to complete before proceeding
-var countdown = new CountdownEvent(5);
-
-for (int i = 0; i < 5; i++)
-{
-    int taskId = i;
-    Task.Run(() =>
-    {
-        Console.WriteLine($"Task {taskId} working...");
-        Thread.Sleep(new Random().Next(500, 2000));
-        Console.WriteLine($"Task {taskId} done");
-        countdown.Signal();   // decrement count
-    });
-}
-
-countdown.Wait();  // blocks until count reaches 0
-Console.WriteLine("All tasks completed!");
-```
-
-### Barrier — Phased Execution
-
-```csharp
-// All threads must reach the barrier before any can proceed to next phase
-var barrier = new Barrier(participantCount: 3, (b) =>
-{
-    Console.WriteLine($"--- Phase {b.CurrentPhaseNumber} complete ---");
-});
-
-for (int i = 0; i < 3; i++)
-{
-    int threadId = i;
-    Task.Run(() =>
-    {
-        for (int phase = 0; phase < 3; phase++)
-        {
-            Console.WriteLine($"Thread {threadId}: Phase {phase} work");
-            Thread.Sleep(new Random().Next(100, 500));
-            barrier.SignalAndWait();  // wait for all participants
-        }
-    });
-}
-```
-
----
-
-## 16. Thread Pool Pattern
-
-Creating a new OS thread is expensive: it costs about 1MB of stack memory, requires kernel-mode transitions, and takes hundreds of microseconds. If your web server creates a new thread for every incoming request and handles 10,000 requests per second, that's 10,000 threads — 10GB of stack memory alone, plus catastrophic context-switching overhead.
-
-The **thread pool pattern** solves this by maintaining a fixed set of pre-created worker threads. Work items are submitted to a queue, and idle threads pick up the next item. When a thread finishes a task, it goes back to the pool instead of being destroyed. This amortizes the thread creation cost across many tasks and keeps the thread count bounded.
-
-In .NET, the `ThreadPool` class provides a built-in, well-tuned thread pool. You almost never need to create threads directly — `Task.Run` queues work to the ThreadPool automatically. The pool dynamically adjusts its size using a **hill-climbing algorithm**: it adds threads slowly when the queue builds up and retires them when they're idle.
-
-A **thread pool** maintains a pool of pre-created threads that pick up work from a queue, avoiding the overhead of creating/destroying threads.
-
-```
-                    ┌──────────────────────────┐
-   Task Queue       │   Thread Pool             │
-  ┌─────────┐      │  ┌────┐ ┌────┐ ┌────┐    │
-  │ Task 1  │──────│─►│ T1 │ │ T2 │ │ T3 │    │
-  │ Task 2  │      │  └────┘ └────┘ └────┘    │
-  │ Task 3  │      │  ┌────┐ ┌────┐            │
-  │  ...    │      │  │ T4 │ │ T5 │            │
-  └─────────┘      │  └────┘ └────┘            │
-                    └──────────────────────────┘
-```
-
-### .NET ThreadPool
-
-```csharp
-// Queue work to the thread pool
-ThreadPool.QueueUserWorkItem(_ =>
-{
-    Console.WriteLine($"Running on thread {Thread.CurrentThread.ManagedThreadId}");
-});
-
-// Configure pool size
-ThreadPool.SetMinThreads(workerThreads: 4, completionPortThreads: 4);
-ThreadPool.SetMaxThreads(workerThreads: 100, completionPortThreads: 100);
-
-// Get pool info
-ThreadPool.GetAvailableThreads(out int workers, out int io);
-Console.WriteLine($"Available: {workers} worker, {io} I/O");
-```
-
-### Task.Run — Preferred Way
-
-```csharp
-// Task.Run queues work to ThreadPool and returns a Task
-var task = Task.Run(() =>
-{
-    return ExpensiveComputation();
-});
-int result = await task;
-```
-
-### Custom Thread Pool
-
-```csharp
-public class SimpleThreadPool : IDisposable
-{
-    private readonly BlockingCollection<Action> _workQueue = new();
-    private readonly Thread[] _threads;
-
-    public SimpleThreadPool(int threadCount)
-    {
-        _threads = new Thread[threadCount];
-        for (int i = 0; i < threadCount; i++)
-        {
-            _threads[i] = new Thread(WorkerLoop) { IsBackground = true };
-            _threads[i].Start();
-        }
-    }
-
-    private void WorkerLoop()
-    {
-        foreach (var work in _workQueue.GetConsumingEnumerable())
-        {
-            try { work(); }
-            catch (Exception ex) { Console.WriteLine($"Error: {ex.Message}"); }
-        }
-    }
-
-    public void Submit(Action work) => _workQueue.Add(work);
-
-    public void Dispose()
-    {
-        _workQueue.CompleteAdding();
-        foreach (var t in _threads) t.Join();
-        _workQueue.Dispose();
-    }
-}
-```
-
-**Interview Tip:** Never create threads manually for short-lived work. Use `Task.Run` or `ThreadPool.QueueUserWorkItem`. Thread creation costs ~1MB stack + OS overhead.
-
----
-
-## 17. Producer-Consumer Pattern
-
-The **producer-consumer pattern** is one of the most widely used concurrency patterns in real-world systems. Producers generate work items (messages, tasks, data) and place them into a shared buffer. Consumers take items from the buffer and process them. The buffer acts as a **decoupling layer** — producers and consumers don't need to know about each other, and they can run at different speeds.
-
-This pattern is everywhere: message queues (RabbitMQ, Kafka), logging systems (log events are produced by application code and consumed by a writer), web servers (requests are produced by the network layer and consumed by request handlers), and data processing pipelines.
-
-The buffer is usually **bounded** (has a maximum capacity). When the buffer is full, producers block until consumers make room. When the buffer is empty, consumers block until producers add items. This **backpressure** mechanism prevents fast producers from overwhelming slow consumers and running the system out of memory.
-
-Producers add items to a shared buffer. Consumers remove items. The buffer decouples them.
-
-```
-Producer 1 ──►  ┌─────────────────┐  ──► Consumer 1
-Producer 2 ──►  │  Bounded Buffer  │  ──► Consumer 2
-Producer 3 ──►  └─────────────────┘  ──► Consumer 3
-```
-
-### Using `BlockingCollection<T>`
-
-```csharp
-public class ProducerConsumer
-{
-    private readonly BlockingCollection<int> _buffer = new(boundedCapacity: 10);
-
-    public async Task RunAsync()
-    {
-        // Start producers and consumers
-        var producers = Enumerable.Range(1, 3).Select(id => Task.Run(() => Produce(id)));
-        var consumers = Enumerable.Range(1, 2).Select(id => Task.Run(() => Consume(id)));
-
-        await Task.WhenAll(producers);
-        _buffer.CompleteAdding();   // signal no more items
-        await Task.WhenAll(consumers);
-    }
-
-    private void Produce(int producerId)
-    {
-        for (int i = 0; i < 20; i++)
-        {
-            _buffer.Add(i);  // blocks if buffer is full
-            Console.WriteLine($"Producer {producerId}: Added {i}");
-        }
-    }
-
-    private void Consume(int consumerId)
-    {
-        foreach (var item in _buffer.GetConsumingEnumerable())
-        {
-            Console.WriteLine($"Consumer {consumerId}: Processing {item}");
-            Thread.Sleep(100); // simulate work
-        }
-    }
-}
-```
-
-### Using `Channel<T>` (Modern, High-Performance)
-
-```csharp
-public class ChannelProducerConsumer
-{
-    public async Task RunAsync()
-    {
-        var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(100)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = false,
-            SingleWriter = false
-        });
-
-        // Producer
-        var producer = Task.Run(async () =>
-        {
-            for (int i = 0; i < 50; i++)
-            {
-                await channel.Writer.WriteAsync($"Message {i}");
-            }
-            channel.Writer.Complete();
-        });
-
-        // Multiple consumers
-        var consumers = Enumerable.Range(1, 3).Select(id => Task.Run(async () =>
-        {
-            await foreach (var item in channel.Reader.ReadAllAsync())
-            {
-                Console.WriteLine($"Consumer {id}: {item}");
-                await Task.Delay(50);
-            }
-        }));
-
-        await Task.WhenAll(consumers.Append(producer));
-    }
-}
-```
-
-### Pipeline Pattern (Multi-Stage Producer-Consumer)
-
-```csharp
-// Stage 1: Read → Stage 2: Transform → Stage 3: Write
-public async Task PipelineAsync()
-{
-    var stage1to2 = Channel.CreateBounded<string>(100);
-    var stage2to3 = Channel.CreateBounded<string>(100);
-
-    var reader = Task.Run(async () =>
-    {
-        foreach (var line in File.ReadLines("input.txt"))
-            await stage1to2.Writer.WriteAsync(line);
-        stage1to2.Writer.Complete();
-    });
-
-    var transformer = Task.Run(async () =>
-    {
-        await foreach (var line in stage1to2.Reader.ReadAllAsync())
-            await stage2to3.Writer.WriteAsync(line.ToUpper());
-        stage2to3.Writer.Complete();
-    });
-
-    var writer = Task.Run(async () =>
-    {
-        await using var sw = new StreamWriter("output.txt");
-        await foreach (var line in stage2to3.Reader.ReadAllAsync())
-            await sw.WriteLineAsync(line);
-    });
-
-    await Task.WhenAll(reader, transformer, writer);
-}
-```
-
----
-
-## 18. Reader-Writer Pattern
-
-Many data structures are read far more often than they are written. A configuration store might be read 10,000 times per second but updated once per minute. Using a regular `lock` would serialize all those reads unnecessarily — there's no reason two threads can't read the same config simultaneously.
-
-The **reader-writer pattern** exploits this asymmetry. It allows **unlimited concurrent readers** but requires **exclusive access for writers**. When a writer wants to modify the data, it waits until all current readers finish, then blocks new readers until it's done. This gives much better throughput than a regular lock in read-heavy workloads.
-
-.NET provides `ReaderWriterLockSlim` for this pattern. It supports three modes:
-- **Read lock**: Multiple threads can hold read locks simultaneously. No writers allowed.
-- **Write lock**: Only one thread can hold a write lock. No readers or other writers allowed.
-- **Upgradeable read lock**: A read lock that can be upgraded to a write lock. Only one upgradeable lock at a time (to prevent deadlock during upgrade).
-
-Multiple readers can access concurrently, but writers need exclusive access.
-
-```
-Readers:  R1 ████  R2 ████  R3 ████     (concurrent — OK)
-Writer:   ░░░░░░░░░░░░░░░░░░ W1 ████    (exclusive — blocks all)
-```
-
-### `ReaderWriterLockSlim`
-
-```csharp
-public class ThreadSafeList<T>
-{
-    private readonly List<T> _list = new();
-    private readonly ReaderWriterLockSlim _rwLock = new();
-
-    public T Get(int index)
-    {
-        _rwLock.EnterReadLock();       // multiple readers allowed
-        try
-        {
-            return _list[index];
-        }
-        finally
-        {
-            _rwLock.ExitReadLock();
-        }
-    }
-
-    public IReadOnlyList<T> GetAll()
-    {
-        _rwLock.EnterReadLock();
-        try
-        {
-            return _list.ToList();     // snapshot
-        }
-        finally
-        {
-            _rwLock.ExitReadLock();
-        }
-    }
-
-    public void Add(T item)
-    {
-        _rwLock.EnterWriteLock();      // exclusive access
-        try
-        {
-            _list.Add(item);
-        }
-        finally
-        {
-            _rwLock.ExitWriteLock();
-        }
-    }
-
-    public bool Remove(T item)
-    {
-        _rwLock.EnterWriteLock();
-        try
-        {
-            return _list.Remove(item);
-        }
-        finally
-        {
-            _rwLock.ExitWriteLock();
-        }
-    }
-
-    // Upgradeable read — start as reader, upgrade to writer if needed
-    public void AddIfNotExists(T item)
-    {
-        _rwLock.EnterUpgradeableReadLock();
-        try
-        {
-            if (!_list.Contains(item))
-            {
-                _rwLock.EnterWriteLock();
-                try
-                {
-                    _list.Add(item);
-                }
-                finally
-                {
-                    _rwLock.ExitWriteLock();
-                }
-            }
-        }
-        finally
-        {
-            _rwLock.ExitUpgradeableReadLock();
-        }
-    }
-}
-```
-
-| Lock Mode | Concurrent Readers | Concurrent Writers | Use When |
-|---|---|---|---|
-| Read | ✅ Many | ❌ None | Reading shared data |
-| Write | ❌ None | ❌ One only | Modifying shared data |
-| Upgradeable Read | ✅ Many readers | ❌ One upgradeable | Read then maybe write |
-
-**Interview Tip:** `ReaderWriterLockSlim` is preferred over `ReaderWriterLock` (old, slower). Use it when reads vastly outnumber writes (e.g., cache, config). If reads ≈ writes, a simple `lock` may be faster.
-
----
-
-## 19. Thread-Safe Cache
-
-A **cache** stores the results of expensive operations (database queries, API calls, computations) so they can be reused without repeating the work. In a multi-threaded application, the cache is shared across threads, which introduces two challenges:
-
-1. **Concurrent reads and writes**: Multiple threads may try to read and update the cache simultaneously. A regular `Dictionary` is not thread-safe — concurrent modifications can corrupt its internal data structures.
-
-2. **Thundering herd / cache stampede**: When a cache entry expires or is missing, dozens of threads might all see the miss simultaneously and all try to compute the same expensive value. You want exactly one thread to compute it while the others wait for the result.
-
-The solution to both problems is using `ConcurrentDictionary` with `Lazy<T>`. `ConcurrentDictionary` handles safe concurrent access, and wrapping values in `Lazy<T>` ensures the factory function runs exactly once — even if 100 threads call `GetOrAdd` for the same key at the same instant.
-
-```csharp
-public class ThreadSafeCache<TKey, TValue>
-{
-    private readonly ConcurrentDictionary<TKey, Lazy<TValue>> _cache = new();
-
-    // GetOrAdd with Lazy<T> ensures the factory runs EXACTLY ONCE
-    // even if multiple threads call simultaneously for the same key
-    public TValue GetOrAdd(TKey key, Func<TKey, TValue> factory)
-    {
-        var lazy = _cache.GetOrAdd(key,
-            k => new Lazy<TValue>(() => factory(k), LazyThreadSafetyMode.ExecutionAndPublication));
-        return lazy.Value;
-    }
-
-    public bool TryRemove(TKey key) => _cache.TryRemove(key, out _);
-
-    public void Clear() => _cache.Clear();
-
-    public int Count => _cache.Count;
-}
-```
-
-### Cache with TTL (Time-To-Live)
-
-```csharp
-public class TtlCache<TKey, TValue>
-{
-    private readonly ConcurrentDictionary<TKey, CacheEntry> _cache = new();
-    private readonly TimeSpan _ttl;
-    private readonly Timer _cleanupTimer;
-
-    private record CacheEntry(TValue Value, DateTime ExpiresAt);
-
-    public TtlCache(TimeSpan ttl)
-    {
-        _ttl = ttl;
-        _cleanupTimer = new Timer(_ => EvictExpired(), null, ttl, ttl);
-    }
-
-    public TValue GetOrAdd(TKey key, Func<TKey, TValue> factory)
-    {
-        if (_cache.TryGetValue(key, out var entry) && entry.ExpiresAt > DateTime.UtcNow)
-            return entry.Value;
-
-        var value = factory(key);
-        _cache[key] = new CacheEntry(value, DateTime.UtcNow + _ttl);
-        return value;
-    }
-
-    public bool TryGet(TKey key, out TValue value)
-    {
-        if (_cache.TryGetValue(key, out var entry) && entry.ExpiresAt > DateTime.UtcNow)
-        {
-            value = entry.Value;
-            return true;
-        }
-        value = default;
-        return false;
-    }
-
-    private void EvictExpired()
-    {
-        var now = DateTime.UtcNow;
-        foreach (var kvp in _cache)
-        {
-            if (kvp.Value.ExpiresAt <= now)
-                _cache.TryRemove(kvp.Key, out _);
-        }
-    }
-}
-```
-
-### `MemoryCache` — Built-in .NET Cache
-
-```csharp
-using Microsoft.Extensions.Caching.Memory;
-
-var cache = new MemoryCache(new MemoryCacheOptions
-{
-    SizeLimit = 1000
-});
-
-cache.Set("user:42", user, new MemoryCacheEntryOptions
-{
-    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30),
-    SlidingExpiration = TimeSpan.FromMinutes(10),
-    Size = 1,
-    Priority = CacheItemPriority.Normal
-});
-
-if (cache.TryGetValue("user:42", out User cachedUser))
-    Console.WriteLine(cachedUser.Name);
-```
-
-**Interview Tip:** `ConcurrentDictionary.GetOrAdd` factory can run multiple times for the same key under contention. Wrap in `Lazy<T>` to guarantee single execution.
-
----
-
-## 20. Thread-Safe Blocking Queue
-
-A **blocking queue** is the backbone of the producer-consumer pattern. Unlike a regular queue where `Dequeue` throws an exception when empty, a blocking queue makes the consumer **wait** until an item is available. Similarly, if the queue is bounded (has a maximum size), `Enqueue` makes the producer **wait** until there's room.
-
-This is a classic interview question at companies like Google and Amazon. The implementation requires condition variables (`Monitor.Wait/PulseAll`) to efficiently coordinate between producers and consumers. The key design points are:
-- Use `while` loops (not `if`) for condition checks — spurious wakeups can occur
-- Use `PulseAll` instead of `Pulse` to avoid missed signals
-- Provide a `CompleteAdding()` method for graceful shutdown — consumers need to know when no more items will ever arrive
-
-In production C#, use `BlockingCollection<T>` or `Channel<T>` instead of rolling your own. But understanding the implementation is essential for interviews.
-
-A blocking queue blocks `Dequeue` when empty and `Enqueue` when full.
-
-### Implementation from Scratch
-
-```csharp
-public class BlockingQueue<T>
-{
-    private readonly Queue<T> _queue = new();
-    private readonly int _capacity;
-    private readonly object _lock = new();
-    private bool _isCompleted;
-
-    public BlockingQueue(int capacity) { _capacity = capacity; }
-
-    public void Enqueue(T item)
-    {
-        lock (_lock)
-        {
-            while (_queue.Count >= _capacity)
-            {
-                if (_isCompleted) throw new InvalidOperationException("Queue is completed");
-                Monitor.Wait(_lock);
-            }
-
-            _queue.Enqueue(item);
-            Monitor.PulseAll(_lock);  // wake consumers
-        }
-    }
-
-    public bool TryDequeue(out T item, TimeSpan timeout)
-    {
-        lock (_lock)
-        {
-            DateTime deadline = DateTime.UtcNow + timeout;
-
-            while (_queue.Count == 0)
-            {
-                if (_isCompleted) { item = default; return false; }
-
-                var remaining = deadline - DateTime.UtcNow;
-                if (remaining <= TimeSpan.Zero) { item = default; return false; }
-
-                Monitor.Wait(_lock, remaining);
-            }
-
-            item = _queue.Dequeue();
-            Monitor.PulseAll(_lock);  // wake producers
-            return true;
-        }
-    }
-
-    public void CompleteAdding()
-    {
-        lock (_lock)
-        {
-            _isCompleted = true;
-            Monitor.PulseAll(_lock);  // wake all waiters so they can exit
-        }
-    }
-
-    public IEnumerable<T> GetConsumingEnumerable()
-    {
-        while (true)
-        {
-            if (!TryDequeue(out T item, Timeout.InfiniteTimeSpan))
-                yield break;
-            yield return item;
-        }
-    }
-}
-```
-
-### Usage
-
-```csharp
-var queue = new BlockingQueue<string>(capacity: 5);
-
-// Producer
-var producer = Task.Run(() =>
-{
-    for (int i = 0; i < 20; i++)
-    {
-        queue.Enqueue($"Item {i}");
-        Console.WriteLine($"Produced: Item {i}");
-    }
-    queue.CompleteAdding();
-});
-
-// Consumer
-var consumer = Task.Run(() =>
-{
-    foreach (var item in queue.GetConsumingEnumerable())
-    {
-        Console.WriteLine($"Consumed: {item}");
-        Thread.Sleep(200);
-    }
-});
-
-await Task.WhenAll(producer, consumer);
-```
-
-**Interview Tip:** This is a classic interview question — "implement a thread-safe bounded queue." Key points: `while` loops for conditions (not `if`), `PulseAll` to avoid missed signals, proper `CompleteAdding` for graceful shutdown.
-
----
-
-## 21. Async/Await and Task-Based Asynchronous Pattern
-
-This is arguably the most misunderstood topic in .NET concurrency. **`async/await` is NOT multithreading.** It's a mechanism for writing non-blocking code that doesn't waste threads while waiting for I/O operations.
-
-Here's the key insight: when you call `await httpClient.GetStringAsync(url)`, no thread is sitting around waiting for the response. The current thread is **released back to the ThreadPool** to handle other work. When the HTTP response arrives (signaled by the OS via an I/O completion port), a ThreadPool thread picks up the continuation (the code after `await`) and runs it. This is how a single web server with 12 threads can handle 10,000 concurrent HTTP requests — each request is only using a thread when it's actively computing, not while waiting for database or network responses.
-
-`Task.Run` is different — it explicitly queues CPU-bound work to a ThreadPool thread. Use `async/await` for I/O-bound work (database, HTTP, file) and `Task.Run` for CPU-bound work (compression, encryption, computation).
-
-### async/await Is NOT Multithreading
-
-```csharp
-// This does NOT create a new thread — it releases the current thread during I/O
-public async Task<string> FetchDataAsync(string url)
-{
-    using var client = new HttpClient();
-    string result = await client.GetStringAsync(url); // thread returned to pool during wait
-    return result.ToUpper();                           // continuation runs on pool thread
-}
-```
-
-### Task Combinators
-
-```csharp
-// WhenAll — wait for ALL tasks (parallel fan-out)
-var results = await Task.WhenAll(
-    FetchDataAsync("https://api1.example.com"),
-    FetchDataAsync("https://api2.example.com"),
-    FetchDataAsync("https://api3.example.com")
-);
-
-// WhenAny — wait for FIRST task (racing / timeout)
-var completed = await Task.WhenAny(
-    FetchDataAsync("https://api.example.com"),
-    Task.Delay(TimeSpan.FromSeconds(5))
-);
-if (completed is Task<string> dataTask)
-    Console.WriteLine(await dataTask);
-else
-    Console.WriteLine("Timeout!");
-```
-
-### ValueTask — Avoid Allocation When Result Is Often Cached
-
-```csharp
-public ValueTask<int> GetCachedValueAsync(string key)
-{
-    if (_cache.TryGetValue(key, out int cached))
-        return new ValueTask<int>(cached);  // no Task allocation
-
-    return new ValueTask<int>(LoadFromDbAsync(key));
-}
-```
-
-### ConfigureAwait
-
-```csharp
-// In library code — don't capture synchronization context
-var data = await httpClient.GetStringAsync(url).ConfigureAwait(false);
-
-// In UI code (WPF/WinForms) — capture context to update UI
-var data = await httpClient.GetStringAsync(url); // defaults to ConfigureAwait(true)
-labelStatus.Text = data;
-```
-
-### Common Pitfalls
-
-```csharp
-// ❌ Sync-over-async — can deadlock in UI/ASP.NET
-var result = GetDataAsync().Result;  // BLOCKS thread
-var result = GetDataAsync().GetAwaiter().GetResult(); // also blocks
-
-// ❌ Async void — fire-and-forget, exceptions crash the app
-async void OnClick() { await DoStuff(); } // only OK for event handlers
-
-// ✅ Always return Task/Task<T>
-async Task OnClickAsync() { await DoStuff(); }
-```
-
----
-
-## 22. Volatile and Memory Barriers
-
-Modern CPUs and compilers aggressively optimize code for performance. Two optimizations that matter for multithreading are:
-
-1. **Caching**: A CPU core may read a variable once and keep using its cached copy, never seeing updates from another core.
-2. **Reordering**: The compiler and CPU can reorder instructions for efficiency. `a = 1; b = 2;` might execute as `b = 2; a = 1;` if the CPU decides that's faster.
-
-Both optimizations are invisible in single-threaded code (they preserve "as-if" semantics), but in multi-threaded code, they can cause threads to see stale or inconsistent data. A thread might loop forever checking `while (_running)` because the CPU caches `_running = true` in a register and never re-reads from memory, even though another thread set it to `false`.
-
-**`volatile`** tells the compiler and CPU: "Don't cache this variable — always read from and write to main memory." It prevents read/write reordering across volatile accesses. However, volatile is NOT a substitute for locks — it only guarantees visibility of individual reads/writes, not atomicity of compound operations like `_counter++`.
-
-**Memory barriers (fences)** are the low-level primitives that enforce ordering. A write-release barrier ensures all preceding writes are visible before the barrier. A read-acquire barrier ensures all subsequent reads see the latest values. `Interlocked` operations include implicit full barriers.
-
-### The Problem — CPU Reordering and Caching
-
-```csharp
-// ❌ Without volatile, compiler/CPU may reorder or cache in register
-private bool _running = true;
-
-void WorkerThread()
-{
-    while (_running)  // May never see update from another thread!
-    {
-        DoWork();
-    }
-}
-
-void StopWorker() => _running = false;
-```
-
-### `volatile` Keyword
-
-```csharp
-// ✅ volatile ensures reads/writes are not cached or reordered
-private volatile bool _running = true;
-
-void WorkerThread()
-{
-    while (_running)  // Always reads from memory
-    {
-        DoWork();
-    }
-}
-```
-
-### `Volatile.Read` / `Volatile.Write` — More Explicit
-
-```csharp
-private int _flag;
-private int _data;
-
-void Producer()
-{
-    _data = 42;                        // write data first
-    Volatile.Write(ref _flag, 1);       // write-release barrier
-}
-
-void Consumer()
-{
-    if (Volatile.Read(ref _flag) == 1)  // read-acquire barrier
-        Console.WriteLine(_data);       // guaranteed to see 42
-}
-```
-
-### Memory Barrier
-
-```csharp
-// Full fence — prevents ALL reordering across this point
-Thread.MemoryBarrier();
-
-// Interlocked operations include implicit barriers
-Interlocked.Increment(ref _counter); // acts as a full fence
-```
-
-| Mechanism | Prevents Reordering | Use Case |
+| | `threading` | `asyncio` |
 |---|---|---|
-| `volatile` | Reads not cached, writes visible | Simple flags |
-| `Volatile.Read/Write` | Acquire/release semantics | Lock-free data structures |
-| `Thread.MemoryBarrier()` | Full fence | Rarely needed directly |
-| `Interlocked.*` | Full fence + atomicity | Counters, CAS |
+| Parallelism model | OS-level threads | Single-thread event loop |
+| Overhead per task | ~KB (thread stack) | ~bytes (coroutine) |
+| Max concurrent tasks | ~1000s | ~100,000s |
+| Blocking calls OK? | Yes | NO — blocks the event loop |
+| Best for | Mixed I/O + CPU, legacy code | High-concurrency I/O |
 
----
+### asyncio Synchronization (same concepts!)
 
-## 23. Concurrent Collections
+```python
+# asyncio has its own Lock, Semaphore, Event, Condition — same API
+lock = asyncio.Lock()
+semaphore = asyncio.Semaphore(5)
+event = asyncio.Event()
 
-.NET provides a set of thread-safe collections in the `System.Collections.Concurrent` namespace. These are designed from the ground up for multi-threaded access — they use lock-free algorithms (CAS) or lock striping internally, rather than just wrapping a regular collection with a lock.
+async def safe_write():
+    async with lock:
+        # critical section
+        pass
 
-**Why not just use `lock` around a `Dictionary`?** You could, and for simple cases it works fine. But lock-based wrappers have two problems: (1) contention — every operation takes the same lock, serializing all access; (2) composition — operations like "add if not exists" require holding the lock across multiple method calls, which is error-prone.
-
-Concurrent collections provide **atomic compound operations** like `GetOrAdd`, `AddOrUpdate`, and `TryRemove` that do the check-and-act in a single thread-safe step. This eliminates the most common source of race conditions.
-
-| Collection | Thread-Safe Equivalent | Lock Strategy |
-|---|---|---|
-| `Dictionary<K,V>` | `ConcurrentDictionary<K,V>` | Lock striping |
-| `Queue<T>` | `ConcurrentQueue<T>` | Lock-free (CAS) |
-| `Stack<T>` | `ConcurrentStack<T>` | Lock-free (CAS) |
-| `List<T>` | `ConcurrentBag<T>` | Thread-local + stealing |
-| `Queue<T>` (blocking) | `BlockingCollection<T>` | Monitor-based |
-
-```csharp
-// ConcurrentDictionary — atomic compound operations
-var scores = new ConcurrentDictionary<string, int>();
-
-scores.TryAdd("Alice", 100);
-scores.AddOrUpdate("Alice", 0, (key, old) => old + 10);  // atomic
-int score = scores.GetOrAdd("Bob", _ => ComputeScore());  // factory may run more than once
-
-// ConcurrentQueue — lock-free FIFO
-var queue = new ConcurrentQueue<string>();
-queue.Enqueue("task1");
-if (queue.TryDequeue(out string item))
-    Console.WriteLine(item);
-
-// ConcurrentBag — optimized for same-thread produce/consume
-var bag = new ConcurrentBag<int>();
-Parallel.For(0, 100, i => bag.Add(i));
-Console.WriteLine(bag.Count); // 100
-
-// ImmutableCollections — no locks needed, structural sharing
-var list = ImmutableList.Create(1, 2, 3);
-var newList = list.Add(4);  // returns new list, original unchanged
+async def limited_access():
+    async with semaphore:
+        # at most 5 concurrent
+        pass
 ```
 
+**Interview Tip:** If asked about async, explain the event loop: "One thread processes tasks cooperatively. When a task hits `await` (I/O wait), it yields control so other tasks can run. No locking needed for the same coroutine."
+
 ---
 
-## 24. Cancellation Tokens
+## 15. Common Patterns Cheat Sheet
 
-Long-running operations need a way to be stopped gracefully. In .NET, **cancellation tokens** provide a cooperative cancellation model. "Cooperative" means the running code must voluntarily check whether cancellation has been requested and respond accordingly — nobody forcibly kills the operation from outside.
-
-This is much safer than thread abortion (which was deprecated in .NET for good reason). Thread abortion can leave data structures in a corrupt state because the thread might be killed in the middle of a write. Cooperative cancellation lets the operation finish its current step cleanly, release resources, and exit gracefully.
-
-The pattern involves three components:
-- **`CancellationTokenSource`**: The controller that triggers cancellation (calls `Cancel()`)
-- **`CancellationToken`**: A lightweight struct passed to the operation being cancelled. It checks for cancellation.
-- **`OperationCanceledException`**: Thrown when cancellation is detected, signaling the caller that the operation was intentionally stopped (not an error).
-
-```csharp
-public async Task LongRunningOperationAsync(CancellationToken ct)
-{
-    for (int i = 0; i < 1000; i++)
-    {
-        ct.ThrowIfCancellationRequested();  // throws OperationCanceledException
-
-        await Task.Delay(100, ct);           // pass token to async APIs
-        Console.WriteLine($"Step {i}");
-    }
-}
-
-// Usage
-var cts = new CancellationTokenSource();
-cts.CancelAfter(TimeSpan.FromSeconds(5));  // auto-cancel after 5s
-
-try
-{
-    await LongRunningOperationAsync(cts.Token);
-}
-catch (OperationCanceledException)
-{
-    Console.WriteLine("Operation was cancelled");
-}
-
-// Linked tokens — cancel if ANY source cancels
-var cts1 = new CancellationTokenSource();
-var cts2 = new CancellationTokenSource();
-var linked = CancellationTokenSource.CreateLinkedTokenSource(cts1.Token, cts2.Token);
-
-// Register callback on cancellation
-cts.Token.Register(() => Console.WriteLine("Cleanup on cancel"));
+```
+Pattern                 | Python Tool                    | Use When
+------------------------|--------------------------------|----------------------------------
+Mutual exclusion        | threading.Lock()               | Protect shared data
+Reentrant locking       | threading.RLock()              | Methods calling each other
+Wait for condition      | threading.Condition()          | Producer-consumer
+Limit concurrency       | threading.Semaphore(N)         | Connection pools, rate limiting
+Signal all threads      | threading.Event()              | Start gate, shutdown signal
+Sync at checkpoints     | threading.Barrier(N)           | Phased execution
+Thread-safe queue       | queue.Queue()                  | Producer-consumer pipeline
+Thread pool             | concurrent.futures.Executor    | Reuse threads for many tasks
+Async I/O               | asyncio                        | High-concurrency network I/O
+Timer / periodic task   | threading.Timer()              | Delayed execution
 ```
 
 ---
 
-## 25. Thread-Local Storage
+## 16. Machine Coding Problems
 
-Sometimes the best way to handle shared state is to **not share it at all**. Thread-local storage gives each thread its own private copy of a variable. Since no two threads ever access the same copy, no synchronization is needed — zero locks, zero contention, zero overhead.
-
-A common use case is `Random`: the `Random` class is not thread-safe, and wrapping it in a `lock` every time you need a random number creates a bottleneck. With `ThreadLocal<Random>`, each thread gets its own `Random` instance and can generate numbers without any coordination.
-
-In .NET, there are three mechanisms for thread-local data, and choosing the right one depends on whether your code uses `async/await`:
-- **`[ThreadStatic]`**: Simplest, but has a trap — the field initializer only runs for the first thread.
-- **`ThreadLocal<T>`**: Provides a factory function that runs for each thread. Proper cleanup via `Dispose()`.
-- **`AsyncLocal<T>`**: The only option that **flows across `await`**. When a continuation resumes on a different ThreadPool thread, `AsyncLocal` carries the value over. This is how `HttpContext.Current`, correlation IDs, and logging scopes work internally.
-
-**Thread-local storage** gives each thread its own independent copy of a variable — no synchronization needed.
-
-### `ThreadLocal<T>`
-
-```csharp
-// Each thread gets its own Random instance (Random is NOT thread-safe)
-private static readonly ThreadLocal<Random> _rng = new(() =>
-    new Random(Environment.CurrentManagedThreadId));
-
-Parallel.For(0, 100, i =>
-{
-    int value = _rng.Value.Next(100);  // each thread uses its own Random
-    Console.WriteLine($"Thread {Thread.CurrentThread.ManagedThreadId}: {value}");
-});
-
-// Dispose when done — important to avoid memory leaks
-_rng.Dispose();
-```
-
-### `[ThreadStatic]` Attribute
-
-```csharp
-public class ThreadStaticExample
-{
-    [ThreadStatic]
-    private static int _perThreadCounter;  // each thread has its own copy
-
-    // ⚠️ WARNING: initializer runs ONLY for the first thread!
-    [ThreadStatic]
-    private static List<int> _perThreadList; // null for other threads!
-
-    public static void Increment()
-    {
-        _perThreadList ??= new List<int>();  // must init per-thread
-        _perThreadCounter++;
-        _perThreadList.Add(_perThreadCounter);
-    }
-}
-```
-
-### `AsyncLocal<T>` — Flows Across Awaits
-
-```csharp
-// ThreadLocal does NOT flow across async/await — AsyncLocal does
-private static readonly AsyncLocal<string> _correlationId = new();
-
-public async Task HandleRequestAsync()
-{
-    _correlationId.Value = Guid.NewGuid().ToString();
-    Console.WriteLine($"Start: {_correlationId.Value}");
-
-    await SomeAsyncOperation();  // value flows across await
-
-    Console.WriteLine($"End: {_correlationId.Value}");  // same value
-}
-
-// Used internally by: Activity, HttpContext.Current, logging scopes
-```
-
-| Mechanism | Flows across `await` | Initialization | Use case |
-|---|---|---|---|
-| `[ThreadStatic]` | ❌ | Only first thread | Simple per-thread state |
-| `ThreadLocal<T>` | ❌ | Factory per thread ✅ | Per-thread expensive objects |
-| `AsyncLocal<T>` | ✅ | Manual | Correlation IDs, logging context |
-
-**Interview Tip:** `ThreadLocal<T>` doesn't flow across `await` because the continuation may run on a different thread. Use `AsyncLocal<T>` for anything that crosses async boundaries.
+These are the actual problems asked in FAANG LLD/machine coding rounds. Each one teaches a concurrency pattern.
 
 ---
 
-## 26. Immutability and Thread Safety
+### 16.1 Producer-Consumer (Bounded Buffer)
 
-The simplest way to make something thread-safe is to make it **immutable** — if an object's state can never change after construction, any number of threads can read it concurrently without risk. There's nothing to synchronize because there are no writes.
+**Asked at:** Uber, Amazon, Google, Goldman Sachs
 
-This is a powerful insight: instead of carefully locking around mutable state, you can often redesign your data to be immutable and eliminate entire categories of concurrency bugs. The cost is that "modifying" an immutable object means creating a new one with the changed values, which can be expensive for large objects. However, immutable collections use **structural sharing** — when you add an element to an immutable list, the new list shares most of its internal nodes with the old one, so the copy is much cheaper than you'd expect.
+**Problem:** Multiple producers add items to a buffer. Multiple consumers remove items. Buffer has a max capacity. Producers block when full. Consumers block when empty.
 
-.NET embraces immutability through several features:
-- **`record` types** (C# 9+): Value equality and `with` expressions for non-destructive mutation
-- **`System.Collections.Immutable`**: Immutable lists, dictionaries, sets with structural sharing
-- **`System.Collections.Frozen`** (.NET 8+): Extremely fast read-optimized collections for data that never changes after creation
-- **`readonly` structs and `init` properties**: Compile-time enforcement of immutability
+**Concepts:** Condition variables, mutual exclusion, blocking
 
-Immutable objects are inherently thread-safe — no locks needed because state never changes.
+```python
+import threading
+import time
+import random
 
-### Immutable Class
+class BoundedBuffer:
+    def __init__(self, capacity):
+        self.buffer = []
+        self.capacity = capacity
+        self.lock = threading.Lock()
+        self.not_full = threading.Condition(self.lock)
+        self.not_empty = threading.Condition(self.lock)
 
-```csharp
-public class ImmutablePoint
-{
-    public int X { get; }
-    public int Y { get; }
+    def produce(self, item):
+        with self.not_full:
+            while len(self.buffer) >= self.capacity:
+                self.not_full.wait()    # Wait until space available
 
-    public ImmutablePoint(int x, int y) { X = x; Y = y; }
+            self.buffer.append(item)
+            print(f"  Produced: {item} | Buffer size: {len(self.buffer)}")
+            self.not_empty.notify()     # Wake a consumer
 
-    // "Mutation" returns a new object
-    public ImmutablePoint WithX(int x) => new(x, Y);
-    public ImmutablePoint WithY(int y) => new(X, y);
-}
+    def consume(self):
+        with self.not_empty:
+            while len(self.buffer) == 0:
+                self.not_empty.wait()   # Wait until item available
 
-// Safe to share across threads without locks
-var point = new ImmutablePoint(1, 2);
-// Multiple threads can read point.X, point.Y concurrently
+            item = self.buffer.pop(0)
+            print(f"  Consumed: {item} | Buffer size: {len(self.buffer)}")
+            self.not_full.notify()      # Wake a producer
+            return item
+
+
+def producer(buffer, producer_id, count):
+    for i in range(count):
+        item = f"P{producer_id}-{i}"
+        buffer.produce(item)
+        time.sleep(random.uniform(0.1, 0.3))
+
+def consumer(buffer, consumer_id, count):
+    for _ in range(count):
+        buffer.consume()
+        time.sleep(random.uniform(0.2, 0.5))
+
+
+# Test
+buffer = BoundedBuffer(capacity=3)
+
+producers = [threading.Thread(target=producer, args=(buffer, i, 5)) for i in range(2)]
+consumers = [threading.Thread(target=consumer, args=(buffer, i, 5)) for i in range(2)]
+
+for t in producers + consumers: t.start()
+for t in producers + consumers: t.join()
 ```
 
-### Records — Built-in Immutability
-
-```csharp
-public record Config(string ConnectionString, int Timeout, bool EnableCache);
-
-var config = new Config("Server=db", 30, true);
-var updated = config with { Timeout = 60 };  // new object
-// Original 'config' is unchanged — safe to read from any thread
-```
-
-### Immutable Collections
-
-```csharp
-using System.Collections.Immutable;
-
-// Each operation returns a NEW collection
-var list = ImmutableList.Create(1, 2, 3);
-var newList = list.Add(4);         // list is unchanged
-var dict = ImmutableDictionary<string, int>.Empty
-    .Add("a", 1)
-    .Add("b", 2);
-
-// Builder pattern for batch modifications
-var builder = ImmutableList.CreateBuilder<int>();
-for (int i = 0; i < 1000; i++)
-    builder.Add(i);
-ImmutableList<int> result = builder.ToImmutable();
-```
-
-### Frozen Collections (.NET 8+) — Read-Optimized
-
-```csharp
-using System.Collections.Frozen;
-
-// Create once, read many times — faster reads than Immutable*
-var lookup = new Dictionary<string, int>
-{
-    ["alice"] = 1,
-    ["bob"] = 2
-}.ToFrozenDictionary();
-
-int value = lookup["alice"];  // optimized for read-heavy, multi-threaded access
-```
-
-### Atomic Reference Swap with Immutable Objects
-
-```csharp
-// Lock-free updates using Interlocked + immutable objects
-private ImmutableList<string> _items = ImmutableList<string>.Empty;
-
-public void AddItem(string item)
-{
-    ImmutableList<string> original, updated;
-    do
-    {
-        original = _items;
-        updated = original.Add(item);
-    } while (Interlocked.CompareExchange(ref _items, updated, original) != original);
-}
-```
-
-| Approach | Thread-safe | Perf (reads) | Perf (writes) | Use case |
-|---|---|---|---|---|
-| `lock` + `List<T>` | ✅ | Blocked | Blocked | General purpose |
-| `ConcurrentBag<T>` | ✅ | Good | Good | Frequent add/remove |
-| `ImmutableList<T>` | ✅ | Good | Slower (copy) | Snapshot semantics |
-| `FrozenDictionary` | ✅ | Fastest | ❌ (no mutation) | Static lookup tables |
+**Key Points to Mention in Interview:**
+- Two condition variables: `not_full` (producers wait on) and `not_empty` (consumers wait on)
+- `while` loop for wait — handles spurious wakeups
+- `notify()` wakes one waiter; use `notify_all()` if multiple waiters might need to wake
 
 ---
 
-## 27. Parallel Programming (PLINQ & Parallel Class)
+### 16.2 Reader-Writer Lock
 
-When you have a CPU-bound operation that needs to process a large collection of data, you can split the work across multiple cores to get a near-linear speedup. .NET provides two high-level APIs for this: **PLINQ** and the **`Parallel` class**.
+**Asked at:** Google, Microsoft, Uber
 
-**PLINQ** (Parallel LINQ) lets you add `.AsParallel()` to any LINQ query and the runtime automatically partitions the data, processes chunks on different threads, and merges the results. It's the easiest way to parallelize data processing — often a one-line change. However, not all queries benefit: if the per-element work is trivial, the overhead of partitioning and merging can outweigh the parallelism benefit.
+**Problem:** Multiple readers can read simultaneously, but a writer needs exclusive access.
 
-The **`Parallel` class** provides `Parallel.For`, `Parallel.ForEach`, and `Parallel.Invoke` for more explicit parallel loops. It gives you more control than PLINQ: you can set the degree of parallelism, use thread-local accumulators (to avoid contention on a shared result variable), and handle cancellation.
+**Concepts:** Shared vs exclusive locking, starvation prevention
 
-A critical rule: **never use `Parallel.ForEach` for I/O-bound work** (HTTP calls, database queries). It wastes ThreadPool threads by blocking them during I/O waits. Use `Parallel.ForEachAsync` (.NET 6+) or `Task.WhenAll` with `async/await` for I/O.
+```python
+import threading
+import time
 
-### PLINQ — Parallel LINQ
+class ReadWriteLock:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._readers_ok = threading.Condition(self._lock)
+        self._writers_ok = threading.Condition(self._lock)
+        self._readers = 0
+        self._writing = False
+        self._waiting_writers = 0
 
-```csharp
-var numbers = Enumerable.Range(1, 10_000_000);
+    def acquire_read(self):
+        with self._lock:
+            # Wait if someone is writing OR writers are waiting (prevent writer starvation)
+            while self._writing or self._waiting_writers > 0:
+                self._readers_ok.wait()
+            self._readers += 1
 
-// Parallel query — splits data across cores
-var results = numbers
-    .AsParallel()
-    .WithDegreeOfParallelism(Environment.ProcessorCount)
-    .Where(n => IsPrime(n))
-    .OrderBy(n => n)  // ⚠️ ordering adds overhead
-    .ToList();
+    def release_read(self):
+        with self._lock:
+            self._readers -= 1
+            if self._readers == 0:
+                self._writers_ok.notify()   # Wake a waiting writer
 
-// AsOrdered() preserves input order (slower)
-var ordered = numbers.AsParallel().AsOrdered()
-    .Select(n => n * 2)
-    .ToList();
+    def acquire_write(self):
+        with self._lock:
+            self._waiting_writers += 1
+            while self._writing or self._readers > 0:
+                self._writers_ok.wait()
+            self._waiting_writers -= 1
+            self._writing = True
 
-// ForAll — parallel side-effects (unordered)
-numbers.AsParallel().Where(n => n % 2 == 0).ForAll(n =>
-{
-    ProcessItem(n);  // runs in parallel, no result collection
-});
+    def release_write(self):
+        with self._lock:
+            self._writing = False
+            self._readers_ok.notify_all()  # Wake all waiting readers
+            self._writers_ok.notify()       # Wake one waiting writer
 
-// Aggregate with thread-local accumulator
-long sum = numbers.AsParallel().Aggregate(
-    seed: 0L,                               // initial value per partition
-    func: (subtotal, item) => subtotal + item, // partition accumulator
-    resultSelector: total => total              // final selector
-);
+
+# Usage
+rw_lock = ReadWriteLock()
+shared_data = {"value": 0}
+
+def reader(reader_id):
+    for _ in range(3):
+        rw_lock.acquire_read()
+        try:
+            print(f"Reader-{reader_id} reads: {shared_data['value']}")
+            time.sleep(0.1)
+        finally:
+            rw_lock.release_read()
+
+def writer(writer_id):
+    for i in range(3):
+        rw_lock.acquire_write()
+        try:
+            shared_data["value"] += 1
+            print(f"Writer-{writer_id} wrote: {shared_data['value']}")
+            time.sleep(0.2)
+        finally:
+            rw_lock.release_write()
+
+threads = (
+    [threading.Thread(target=reader, args=(i,)) for i in range(3)] +
+    [threading.Thread(target=writer, args=(i,)) for i in range(2)]
+)
+for t in threads: t.start()
+for t in threads: t.join()
 ```
 
-### `Parallel.ForEach` / `Parallel.For`
-
-```csharp
-var items = GetLargeDataSet();
-
-// Basic parallel loop
-Parallel.ForEach(items, item =>
-{
-    ProcessItem(item);  // CPU-bound work
-});
-
-// With options
-Parallel.ForEach(items,
-    new ParallelOptions
-    {
-        MaxDegreeOfParallelism = 4,
-        CancellationToken = cts.Token
-    },
-    item => ProcessItem(item)
-);
-
-// With thread-local state (avoid contention)
-long totalSize = 0;
-Parallel.ForEach(files,
-    localInit: () => 0L,                           // init per-thread accumulator
-    body: (file, state, localSum) =>
-    {
-        long size = new FileInfo(file).Length;
-        return localSum + size;                     // thread-local add
-    },
-    localFinally: localSum =>
-    {
-        Interlocked.Add(ref totalSize, localSum);   // merge at end
-    }
-);
-```
-
-### `Parallel.Invoke` — Fire Multiple Actions
-
-```csharp
-Parallel.Invoke(
-    () => DownloadFile("file1.zip"),
-    () => DownloadFile("file2.zip"),
-    () => DownloadFile("file3.zip")
-);
-```
-
-### `Parallel.ForEachAsync` (.NET 6+)
-
-```csharp
-// Async-friendly parallel loop
-await Parallel.ForEachAsync(
-    urls,
-    new ParallelOptions { MaxDegreeOfParallelism = 10 },
-    async (url, ct) =>
-    {
-        var content = await httpClient.GetStringAsync(url, ct);
-        ProcessContent(content);
-    }
-);
-```
-
-**Interview Tip:** PLINQ and `Parallel.*` are for **CPU-bound** work. For **I/O-bound** work, use `Task.WhenAll` with `async/await`. Using `Parallel.ForEach` for I/O wastes ThreadPool threads.
+**Key Design Decision:** This implementation is **writer-preferring** — if a writer is waiting, new readers also wait. This prevents writer starvation.
 
 ---
 
-## 28. Async Streams (IAsyncEnumerable)
+### 16.3 Thread-Safe LRU Cache
 
-`IAsyncEnumerable<T>` (introduced in C# 8) combines two concepts: **async/await** and **iterators** (`yield return`). It lets you produce and consume a sequence of items where each item may require an asynchronous operation to produce.
+**Asked at:** Uber, Amazon, Meta, Google
 
-This is essential for streaming scenarios: reading rows from a database cursor, consuming messages from a message queue, tailing a log file, or receiving real-time data from an API. Without async streams, you'd either have to load everything into memory first (bad for large datasets) or write complex callback-based code.
+**Problem:** Implement an LRU cache that supports concurrent `get` and `put` operations.
 
-With `await foreach`, the consumer naturally applies backpressure — the producer only generates the next item when the consumer is ready. This prevents unbounded buffering and memory exhaustion.
+**Concepts:** Lock granularity, OrderedDict
 
-Process data as it arrives, asynchronously, without buffering everything in memory.
+```python
+import threading
+from collections import OrderedDict
 
-```csharp
-// Producer — yields items asynchronously
-public async IAsyncEnumerable<StockPrice> StreamPricesAsync(
-    string symbol,
-    [EnumeratorCancellation] CancellationToken ct = default)
-{
-    while (!ct.IsCancellationRequested)
-    {
-        var price = await FetchPriceAsync(symbol, ct);
-        yield return price;
-        await Task.Delay(1000, ct);  // poll every second
-    }
-}
+class ThreadSafeLRUCache:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        self.cache = OrderedDict()
+        self.lock = threading.Lock()
 
-// Consumer — processes items as they arrive
-await foreach (var price in StreamPricesAsync("GOOG").WithCancellation(cts.Token))
-{
-    Console.WriteLine($"{price.Symbol}: ${price.Value}");
-    if (price.Value > 200) break;  // can break early
-}
+    def get(self, key):
+        with self.lock:
+            if key not in self.cache:
+                return -1
+            self.cache.move_to_end(key)  # Mark as recently used
+            return self.cache[key]
+
+    def put(self, key, value):
+        with self.lock:
+            if key in self.cache:
+                self.cache.move_to_end(key)
+                self.cache[key] = value
+            else:
+                if len(self.cache) >= self.capacity:
+                    self.cache.popitem(last=False)  # Remove LRU (front)
+                self.cache[key] = value
 ```
 
-### LINQ Over Async Streams (System.Linq.Async)
+**Follow-up: Striped Locking for Higher Throughput**
 
-```csharp
-// Requires NuGet: System.Linq.Async
-var expensiveStocks = StreamPricesAsync("GOOG")
-    .Where(p => p.Value > 150)
-    .Take(10)
-    .Select(p => $"{p.Symbol}: ${p.Value}");
+```python
+class StripedLRUCache:
+    """
+    Splits into N shards, each with its own lock.
+    Different keys accessed concurrently if they hash to different shards.
+    """
+    def __init__(self, capacity: int, num_stripes: int = 16):
+        self.num_stripes = num_stripes
+        shard_cap = max(1, capacity // num_stripes)
+        self.shards = [OrderedDict() for _ in range(num_stripes)]
+        self.locks = [threading.Lock() for _ in range(num_stripes)]
+        self.shard_capacity = shard_cap
 
-await foreach (var s in expensiveStocks)
-    Console.WriteLine(s);
-```
+    def _shard(self, key):
+        return hash(key) % self.num_stripes
 
-### Channel-Backed Async Stream
+    def get(self, key):
+        idx = self._shard(key)
+        with self.locks[idx]:
+            if key not in self.shards[idx]:
+                return -1
+            self.shards[idx].move_to_end(key)
+            return self.shards[idx][key]
 
-```csharp
-public ChannelReader<LogEntry> TailLogAsync(string path, CancellationToken ct)
-{
-    var channel = Channel.CreateUnbounded<LogEntry>();
-
-    _ = Task.Run(async () =>
-    {
-        using var reader = new StreamReader(new FileStream(path, FileMode.Open,
-            FileAccess.Read, FileShare.ReadWrite));
-        reader.BaseStream.Seek(0, SeekOrigin.End);
-
-        while (!ct.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(ct);
-            if (line != null)
-                await channel.Writer.WriteAsync(new LogEntry(line), ct);
-            else
-                await Task.Delay(100, ct);
-        }
-        channel.Writer.Complete();
-    }, ct);
-
-    return channel.Reader;
-}
-
-// Consume
-await foreach (var entry in TailLogAsync("app.log", cts.Token).ReadAllAsync())
-    Console.WriteLine(entry);
+    def put(self, key, value):
+        idx = self._shard(key)
+        with self.locks[idx]:
+            if key in self.shards[idx]:
+                self.shards[idx].move_to_end(key)
+                self.shards[idx][key] = value
+            else:
+                if len(self.shards[idx]) >= self.shard_capacity:
+                    self.shards[idx].popitem(last=False)
+                self.shards[idx][key] = value
 ```
 
 ---
 
-## 29. Thread Starvation and ThreadPool Tuning
-
-**Thread starvation** is one of the most common production issues in .NET applications, and it's almost always caused by the same mistake: **synchronously blocking on async code** (calling `.Result`, `.Wait()`, or `.GetAwaiter().GetResult()`).
-
-Here's how it happens: the .NET ThreadPool has a limited number of threads (starts at `Environment.ProcessorCount`). When a thread calls `.Result` on an async method, it blocks — it can't do anything else until the result arrives. But the async method's continuation needs a ThreadPool thread to run. If all pool threads are blocked on `.Result`, there are no threads left to run continuations — and those continuations are what would unblock the waiting threads. **Complete deadlock.**
-
-The ThreadPool's hill-climbing algorithm makes this worse: it detects high queue depth and slowly injects new threads (~1-2 per second), but if you're blocking hundreds of threads, it can take minutes to recover. Meanwhile, all requests time out.
-
-The fix is simple in concept but often hard in practice: **go async all the way** — from the controller action down to the database call, every layer must use `await` instead of `.Result`. There should be no synchronous blocking anywhere in the request pipeline.
-
-### What Is Thread Starvation?
-
-The ThreadPool runs out of available threads because existing threads are **blocked** (not awaiting). New work items pile up in the queue.
-
-```csharp
-// ❌ Causes starvation — all pool threads blocked on .Result
-var tasks = Enumerable.Range(0, 1000).Select(_ => Task.Run(() =>
-{
-    var result = SomeAsyncMethod().Result;  // BLOCKS a pool thread
-}));
-Task.WaitAll(tasks.ToArray());
-// ThreadPool tries to inject new threads slowly (1-2/sec) — too slow
-
-// ✅ Fix — async all the way
-var tasks = Enumerable.Range(0, 1000).Select(_ => Task.Run(async () =>
-{
-    var result = await SomeAsyncMethod();  // releases thread during wait
-}));
-await Task.WhenAll(tasks);
-```
-
-### Symptoms
-
-- Response times increase suddenly
-- `ThreadPool.GetAvailableThreads` returns 0 workers
-- Thread count climbs steadily (hill-climbing injects ~1-2/sec)
-- CPU is low but app is unresponsive
-
-### Diagnostics
-
-```csharp
-// Monitor thread pool health
-ThreadPool.GetAvailableThreads(out int workers, out int io);
-ThreadPool.GetMaxThreads(out int maxWorkers, out int maxIo);
-ThreadPool.GetMinThreads(out int minWorkers, out int minIo);
-
-Console.WriteLine($"Workers: {maxWorkers - workers}/{maxWorkers} in use");
-Console.WriteLine($"IO: {maxIo - io}/{maxIo} in use");
-
-// Quick fix (NOT a real solution — just buys time)
-ThreadPool.SetMinThreads(200, 200);
-```
-
-### ThreadPool Hill-Climbing Algorithm
-
-```
-Min threads (default = core count)
-    ↓
-[Request burst] → queue builds up → inject 1 thread / 500ms
-    ↓
-Slowly ramps to handle load → stabilizes
-    ↓
-[Load drops] → threads idle → retire threads over time
-```
-
-**Interview Tip:** The #1 cause of thread starvation in .NET is **sync-over-async** (`.Result`, `.Wait()`, `.GetAwaiter().GetResult()` on hot paths). The fix is always: make the call chain fully async.
-
----
-
-## 30. Context Switching and False Sharing
-
-These are two performance-level concerns that you won't encounter in everyday coding but are critical for high-performance systems and commonly asked in senior-level interviews.
-
-### Context Switching
-
-**Context switching** is the cost of pausing one thread and resuming another. The OS must save all the state of the current thread (CPU registers, program counter, stack pointer) and load the saved state of the next thread. This takes 1-10 microseconds — insignificant for a single switch, but devastating at scale.
-
-If you have 1,000 threads on a 4-core machine, the OS spends most of its time switching between threads rather than doing useful work. This is why the rule of thumb for CPU-bound work is to use only as many threads as there are cores. Context switching is also why `SpinLock` exists — for very short critical sections, spinning in user mode is cheaper than blocking (which would trigger two context switches: one to sleep and one to wake up).
-
-When the OS switches the CPU from one thread to another:
-
-1. Save current thread's registers, stack pointer, PC → thread control block
-2. Load next thread's state
-3. Flush CPU pipeline
-4. (Cross-process) Flush TLB, switch page tables
-
-| Type | Cost | Involves |
-|---|---|---|
-| Thread → Thread (same process) | ~1-10 µs | Register save/restore, scheduler |
-| Process → Process | ~10-100 µs | + TLB flush, page table switch |
-| User → Kernel mode | ~0.5-1 µs | Syscall/interrupt |
-
-```csharp
-// Too many threads = excessive context switching
-// Rule of thumb: threads ≈ core count for CPU-bound work
-var options = new ParallelOptions
-{
-    MaxDegreeOfParallelism = Environment.ProcessorCount
-};
-```
-
-### False Sharing
-
-**False sharing** is a subtle hardware-level performance killer. Modern CPUs don't read memory one byte at a time — they read entire **cache lines** (typically 64 bytes). When a CPU core writes to any byte in a cache line, it **invalidates** that cache line on all other cores, forcing them to re-fetch the entire line from main memory.
-
-False sharing occurs when two threads modify **different variables** that happen to reside on the **same cache line**. Neither thread is actually sharing data with the other, but the CPU's cache coherence protocol treats them as if they are, causing the cache line to bounce between cores on every write. This can make parallel code 10-100x slower than expected.
-
-The fix is **padding** — adding unused bytes between variables so they land on separate cache lines. In C#, you can use `StructLayout` with explicit field offsets to control memory layout.
-
-When threads modify **different variables** that happen to be on the **same CPU cache line** (typically 64 bytes), the cache line bounces between cores — massive slowdown.
-
-```csharp
-// ❌ False sharing — counters are adjacent in memory (same cache line)
-public class FalseSharingBad
-{
-    private int _counter1;  // same 64-byte cache line
-    private int _counter2;  // as _counter1!
-
-    public void IncrementCounter1() => Interlocked.Increment(ref _counter1);
-    public void IncrementCounter2() => Interlocked.Increment(ref _counter2);
-}
-
-// ✅ Fix — pad to separate cache lines
-[StructLayout(LayoutKind.Explicit, Size = 128)]
-public struct PaddedCounter
-{
-    [FieldOffset(0)]  public int Value;
-    // [FieldOffset(64)] would be next cache line
-}
-
-// Or use separate arrays with padding
-public class FalseSharingFixed
-{
-    // Each counter on its own cache line
-    [StructLayout(LayoutKind.Explicit, Size = 128)]
-    private struct PaddedInt
-    {
-        [FieldOffset(0)] public int Value;
-    }
-
-    private PaddedInt _counter1;
-    private PaddedInt _counter2;
-
-    public void IncrementCounter1() => Interlocked.Increment(ref _counter1.Value);
-    public void IncrementCounter2() => Interlocked.Increment(ref _counter2.Value);
-}
-```
-
-### Performance Impact
-
-```
-False sharing:    Thread 1 writes _counter1
-                  → Invalidates cache line on Core 2
-                  → Core 2 must re-fetch from L3/main memory
-                  → 10-100x slower than L1 cache hit
-
-No false sharing: Each counter on its own cache line
-                  → Each core works from its own L1 cache
-                  → Full speed
-```
-
-**Interview Tip:** False sharing is a common cause of "my parallel code is slower than sequential." It's particularly insidious because the code looks correct — it's a hardware-level issue.
-
----
-
-## 31. Lock-Free and Wait-Free Algorithms
-
-Traditional lock-based concurrency has a fundamental problem: if a thread holding a lock gets preempted by the OS (context-switched out), **all other threads waiting for that lock are blocked**, even though they could theoretically make progress. Lock-free and wait-free algorithms eliminate this problem by using atomic operations (CAS) instead of locks.
-
-Understanding the hierarchy of progress guarantees is important:
-- **Blocking**: A thread can be blocked indefinitely (regular locks). If the lock holder crashes, everyone is stuck.
-- **Lock-free**: At least one thread always makes progress, even if others are delayed. CAS-retry loops are lock-free — if your CAS fails, it means another thread succeeded.
-- **Wait-free**: Every thread completes in a bounded number of steps, regardless of what other threads are doing. This is the strongest guarantee and hardest to achieve.
-
-In practice, lock-free algorithms are sufficient for most high-performance needs. Wait-free algorithms are rare and complex — they're used in hard real-time systems where latency bounds are critical.
-
-A word of caution: lock-free programming is notoriously difficult to get right. Even published academic papers have had bugs. In .NET, prefer the built-in concurrent collections (`ConcurrentQueue`, `ConcurrentStack`) which are already lock-free and battle-tested.
-
-### Definitions
-
-| Guarantee | Definition |
-|---|---|
-| **Blocking** | Threads can stall indefinitely (locks) |
-| **Lock-free** | At least ONE thread makes progress in bounded steps |
-| **Wait-free** | EVERY thread makes progress in bounded steps |
-| **Obstruction-free** | A thread makes progress if run in isolation |
-
-```
-Wait-free ⊂ Lock-free ⊂ Obstruction-free ⊂ Non-blocking
-```
-
-### Lock-Free Counter (CAS Loop)
-
-```csharp
-public class LockFreeCounter
-{
-    private long _count;
-
-    public void Increment()
-    {
-        long original, updated;
-        do
-        {
-            original = Interlocked.Read(ref _count);
-            updated = original + 1;
-        } while (Interlocked.CompareExchange(ref _count, updated, original) != original);
-        // Lock-free: if CAS fails, another thread succeeded → progress
-    }
-
-    public long Value => Interlocked.Read(ref _count);
-}
-```
-
-### Wait-Free Read, Lock-Free Write
-
-```csharp
-// Copy-on-write: reads are wait-free, writes are lock-free
-public class CopyOnWriteList<T>
-{
-    private volatile ImmutableList<T> _list = ImmutableList<T>.Empty;
-
-    // Wait-free read — just returns the current reference
-    public ImmutableList<T> Snapshot => _list;
-
-    // Lock-free write — CAS loop
-    public void Add(T item)
-    {
-        ImmutableList<T> original, updated;
-        do
-        {
-            original = _list;
-            updated = original.Add(item);
-        } while (Interlocked.CompareExchange(ref _list, updated, original) != original);
-    }
-}
-```
-
-### When to Use Lock-Free vs Locks
-
-| Criteria | Use Locks | Use Lock-Free |
-|---|---|---|
-| Complexity | Prefer (simpler) | When perf demands it |
-| Critical section length | Long operations | Very short operations |
-| Thread count | Low-moderate | Very high contention |
-| Priority inversion | Possible | Avoided |
-| Correctness | Easier to reason about | Very hard to get right |
-
-**Interview Tip:** In practice, prefer `Interlocked.*` and `ConcurrentDictionary` over hand-rolled lock-free algorithms. Lock-free code is extremely hard to verify — even experts get it wrong.
-
----
-
-## 32. Priority Inversion
-
-**Priority inversion** occurs when a high-priority thread is blocked waiting for a lock held by a low-priority thread, while a medium-priority thread preempts the low-priority one.
-
-```
-Time →
-High:   ████░░░░░░░░░░░░░████████   (blocked waiting for lock)
-Medium: ░░░░████████████████░░░░░░░  (runs freely, preempts Low)
-Low:    ████░░░░░░░░░░░░░░░░████░░   (holds lock, can't run because Medium preempts)
-
-Result: High waits for Low, but Low can't run because Medium runs.
-         High is effectively at Medium's mercy = PRIORITY INVERSION
-```
-
-### Real-World Example: Mars Pathfinder (1997)
-
-The Mars Pathfinder rover experienced priority inversion causing system resets. A low-priority meteorological task held a shared mutex, blocking the high-priority bus task, while medium-priority tasks ran freely.
-
-### Solutions
-
-| Solution | How It Works |
-|---|---|
-| **Priority Inheritance** | Low-priority thread temporarily gets High's priority while holding the lock |
-| **Priority Ceiling** | Lock has a ceiling priority — any thread holding it runs at that priority |
-| **Lock-free algorithms** | No locks → no inversion |
-| **Avoid shared resources** | Message passing, immutable data |
-
-```csharp
-// .NET doesn't have built-in priority inheritance, but you can avoid the issue:
-
-// Strategy 1: Don't mix thread priorities (default for .NET)
-// All ThreadPool threads run at Normal priority
-
-// Strategy 2: Use lock-free operations
-Interlocked.Increment(ref _counter);  // no lock to cause inversion
-
-// Strategy 3: Keep critical sections extremely short
-lock (_lock)
-{
-    _value = newValue;  // single assignment — held for nanoseconds
-}
-
-// Strategy 4: Use async instead of blocking
-await semaphore.WaitAsync();  // doesn't block a thread
+### 16.4 Rate Limiter (Token Bucket)
+
+**Asked at:** Uber, Google, Stripe, Amazon
+
+**Problem:** Allow at most N requests per time window. Excess requests are rejected.
+
+**Concepts:** Token refill, thread-safe state
+
+**Token Bucket:** A bucket holds up to N tokens. Each request costs a token. Tokens refill at a fixed rate. Empty bucket = rejected.
+
+```python
+import threading
+import time
+
+class TokenBucketRateLimiter:
+    def __init__(self, rate: float, capacity: int):
+        """
+        rate: tokens added per second
+        capacity: max tokens in bucket
+        """
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = capacity  # Start full
+        self.last_refill = time.monotonic()
+        self.lock = threading.Lock()
+
+    def _refill(self):
+        now = time.monotonic()
+        elapsed = now - self.last_refill
+        new_tokens = elapsed * self.rate
+        self.tokens = min(self.capacity, self.tokens + new_tokens)
+        self.last_refill = now
+
+    def allow(self) -> bool:
+        with self.lock:
+            self._refill()
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return True
+            return False
+
+
+# Test: 5 requests/sec, burst capacity of 5
+limiter = TokenBucketRateLimiter(rate=5, capacity=5)
+
+def make_requests(client_id):
+    for i in range(10):
+        allowed = "ALLOWED" if limiter.allow() else "REJECTED"
+        print(f"Client-{client_id} Request-{i}: {allowed}")
+        time.sleep(0.05)
+
+threads = [threading.Thread(target=make_requests, args=(i,)) for i in range(3)]
+for t in threads: t.start()
+for t in threads: t.join()
 ```
 
 ---
 
-## 33. Fork-Join Pattern
+### 16.5 Rate Limiter (Sliding Window)
 
-The **fork-join pattern** is the parallel equivalent of divide-and-conquer. You split a big problem into smaller independent sub-problems (fork), solve each sub-problem in parallel, and combine their results (join). This is the most natural way to express parallelism for problems that can be decomposed.
+**Asked at:** Uber, Google, Meta
 
-In everyday .NET code, the most common form of fork-join is starting multiple async operations with `Task.WhenAll` — for example, loading a dashboard page by fetching user profile, recent orders, and notifications in parallel, then combining them into a single view model.
+**Concepts:** Deque as timestamp window, cleanup of expired entries
 
-For CPU-bound work, recursive fork-join (like parallel merge sort) is powerful but requires care: you need a **depth limit** to stop forking below a certain problem size. Without it, you create thousands of tiny tasks whose scheduling overhead exceeds the actual computation.
+```python
+import threading
+import time
+from collections import deque
 
-Split (fork) work into subtasks, execute in parallel, then combine (join) results. This is the foundation of divide-and-conquer parallelism.
+class SlidingWindowRateLimiter:
+    def __init__(self, max_requests: int, window_seconds: float):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self.timestamps = deque()
+        self.lock = threading.Lock()
 
+    def allow(self) -> bool:
+        with self.lock:
+            now = time.monotonic()
+
+            # Remove expired timestamps
+            while self.timestamps and now - self.timestamps[0] >= self.window:
+                self.timestamps.popleft()
+
+            if len(self.timestamps) < self.max_requests:
+                self.timestamps.append(now)
+                return True
+            return False
+
+
+# Per-user rate limiter
+class PerUserRateLimiter:
+    def __init__(self, max_requests: int, window_seconds: float):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self.user_limiters = {}
+        self.lock = threading.Lock()
+
+    def allow(self, user_id: str) -> bool:
+        with self.lock:
+            if user_id not in self.user_limiters:
+                self.user_limiters[user_id] = SlidingWindowRateLimiter(
+                    self.max_requests, self.window
+                )
+        return self.user_limiters[user_id].allow()
 ```
-        ┌── Task A ──┐
-Fork ───┤── Task B ──├─── Join → Result
-        └── Task C ──┘
-```
-
-### Using `Task.WhenAll`
-
-```csharp
-public async Task<DashboardData> LoadDashboardAsync(int userId)
-{
-    // Fork — start all independent tasks
-    var profileTask = GetProfileAsync(userId);
-    var ordersTask = GetRecentOrdersAsync(userId);
-    var statsTask = GetUserStatsAsync(userId);
-    var notificationsTask = GetNotificationsAsync(userId);
-
-    // Join — wait for all
-    await Task.WhenAll(profileTask, ordersTask, statsTask, notificationsTask);
-
-    // Combine
-    return new DashboardData
-    {
-        Profile = profileTask.Result,
-        Orders = ordersTask.Result,
-        Stats = statsTask.Result,
-        Notifications = notificationsTask.Result
-    };
-}
-```
-
-### Recursive Fork-Join (Parallel Merge Sort)
-
-```csharp
-public static int[] ParallelMergeSort(int[] arr, int depthLimit = 4)
-{
-    if (arr.Length <= 1) return arr;
-
-    int mid = arr.Length / 2;
-    var left = arr[..mid];
-    var right = arr[mid..];
-
-    if (depthLimit > 0)
-    {
-        // Fork
-        var leftTask = Task.Run(() => ParallelMergeSort(left, depthLimit - 1));
-        var rightTask = Task.Run(() => ParallelMergeSort(right, depthLimit - 1));
-
-        // Join
-        Task.WaitAll(leftTask, rightTask);
-        return Merge(leftTask.Result, rightTask.Result);
-    }
-    else
-    {
-        // Below depth limit — run sequentially to avoid overhead
-        return Merge(ParallelMergeSort(left, 0), ParallelMergeSort(right, 0));
-    }
-}
-
-private static int[] Merge(int[] left, int[] right)
-{
-    var result = new int[left.Length + right.Length];
-    int i = 0, j = 0, k = 0;
-
-    while (i < left.Length && j < right.Length)
-        result[k++] = left[i] <= right[j] ? left[i++] : right[j++];
-    while (i < left.Length) result[k++] = left[i++];
-    while (j < right.Length) result[k++] = right[j++];
-
-    return result;
-}
-```
-
-### Map-Reduce with PLINQ
-
-```csharp
-// Word count across files — map-reduce style
-var wordCounts = Directory.GetFiles("docs", "*.txt")
-    .AsParallel()
-    .SelectMany(file => File.ReadAllText(file).Split(' '))  // MAP
-    .GroupBy(word => word.ToLower())                         // SHUFFLE
-    .ToDictionary(g => g.Key, g => g.Count());              // REDUCE
-```
-
-**Interview Tip:** Always set a depth limit for recursive fork-join. Without it, you create thousands of tasks for small subarrays — the task overhead dwarfs the computation.
 
 ---
 
-## 34. Timers in .NET
+### 16.6 Print In Order / Sequence Controller
 
-.NET has five different timer classes, and choosing the wrong one is a common source of bugs. The most dangerous issue is **reentrancy**: with `System.Threading.Timer` and `System.Timers.Timer`, the callback fires on a ThreadPool thread. If the callback takes longer than the timer interval, the next tick fires while the previous one is still running, leading to overlapping executions and potential data corruption.
+**Asked at:** LeetCode 1114, Amazon, Google
 
-The modern solution is `PeriodicTimer` (.NET 6+), which is designed for async code and is inherently non-reentrant: the next tick only fires after you've processed the current one (because you `await` the next tick). For background services in ASP.NET Core, `PeriodicTimer` inside a `BackgroundService` is the recommended pattern.
+**Problem:** Three threads call `first()`, `second()`, `third()`. Ensure they always execute in order.
 
-For UI applications, always use the UI-thread timers (`System.Windows.Forms.Timer` or `DispatcherTimer`) because they fire on the UI thread, making it safe to update controls without `Invoke`/`Dispatcher.Invoke`.
+**Concepts:** Event-based signaling
 
-| Timer | Thread | Reentrant | Async-Safe | Best For |
-|---|---|---|---|---|
-| `System.Threading.Timer` | ThreadPool | ⚠️ Yes | ❌ | Background services |
-| `System.Timers.Timer` | ThreadPool | ⚠️ Yes | ❌ | Server-side periodic tasks |
-| `PeriodicTimer` (.NET 6+) | Caller (async) | ❌ No | ✅ | Modern async loops |
-| `System.Windows.Forms.Timer` | UI thread | ❌ No | ❌ | WinForms UI updates |
-| `DispatcherTimer` | UI thread | ❌ No | ❌ | WPF UI updates |
+```python
+import threading
 
-### `PeriodicTimer` — Modern, Async-Safe (Preferred)
+class PrintInOrder:
+    def __init__(self):
+        self.first_done = threading.Event()
+        self.second_done = threading.Event()
 
-```csharp
-public class HealthCheckService : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+    def first(self):
+        print("first", end=" ")
+        self.first_done.set()
 
-        while (await timer.WaitForNextTickAsync(ct))
-        {
-            // Guaranteed non-reentrant — next tick waits for this to finish
-            await CheckHealthAsync(ct);
-        }
-    }
-}
+    def second(self):
+        self.first_done.wait()      # Wait until first() is done
+        print("second", end=" ")
+        self.second_done.set()
+
+    def third(self):
+        self.second_done.wait()     # Wait until second() is done
+        print("third")
+
+
+# Threads start in random order, output is always "first second third"
+order = PrintInOrder()
+threads = [
+    threading.Thread(target=order.third),
+    threading.Thread(target=order.first),
+    threading.Thread(target=order.second),
+]
+for t in threads: t.start()
+for t in threads: t.join()
+# Output: first second third
 ```
-
-### `System.Threading.Timer` — Reentrant Danger
-
-```csharp
-// ⚠️ Callback fires on ThreadPool — can overlap if slow!
-var timer = new Timer(
-    callback: _ => Console.WriteLine($"Tick at {DateTime.Now}"),
-    state: null,
-    dueTime: TimeSpan.Zero,           // start immediately
-    period: TimeSpan.FromSeconds(1)   // repeat every 1s
-);
-
-// Prevent reentrancy manually
-var reentrancyGuard = 0;
-var safeTimer = new Timer(_ =>
-{
-    if (Interlocked.CompareExchange(ref reentrancyGuard, 1, 0) != 0)
-        return;  // previous tick still running
-    try
-    {
-        SlowWork();
-    }
-    finally
-    {
-        Interlocked.Exchange(ref reentrancyGuard, 0);
-    }
-}, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
-```
-
-**Interview Tip:** Classic mistake — `System.Threading.Timer` callbacks fire on ThreadPool threads and CAN overlap. Use `PeriodicTimer` in modern .NET to avoid reentrancy bugs.
 
 ---
 
-## 35. Interview Questions
+### 16.7 Print FooBar Alternately
 
-### Conceptual Questions
+**Asked at:** LeetCode 1115, Google, Meta
 
-**Q1: What happens if you call `Task.Run` inside an ASP.NET request?**
-> It queues work to the ThreadPool, consuming an extra thread. In ASP.NET, the request thread is already a pool thread, so you're burning two threads for one request. Only use `Task.Run` for CPU-bound work. For I/O, use `async/await` directly.
+**Problem:** Two threads must print "foobar" N times, alternating.
 
-**Q2: What is thread starvation?**
-> When the ThreadPool is exhausted — all threads are blocked (e.g., sync-over-async `.Result` calls), and new work items queue up indefinitely. Symptoms: increasing response times, timeouts. Fix: use async all the way down.
+**Concepts:** Mutual signaling between threads
 
-**Q3: Can you `lock` on a value type?**
-> No. `lock` requires a reference type. `lock(42)` boxes the int, creating a new object each time — no mutual exclusion. Always lock on a dedicated `object` instance.
+```python
+import threading
 
-**Q4: Why is `lock(this)` bad?**
-> External code can also lock on your instance: `lock(myObj)` — causing unexpected deadlocks. Always lock on a `private readonly object`.
+class FooBar:
+    def __init__(self, n):
+        self.n = n
+        self.foo_event = threading.Event()
+        self.bar_event = threading.Event()
+        self.foo_event.set()    # foo goes first
 
-```csharp
-// ❌ Bad
-public class BadLock
-{
-    public void DoWork() { lock (this) { } }
-}
+    def foo(self):
+        for _ in range(self.n):
+            self.foo_event.wait()
+            print("foo", end="")
+            self.foo_event.clear()
+            self.bar_event.set()
 
-// ❌ Bad — string interning means different code may lock on same object
-lock ("myLock") { }
+    def bar(self):
+        for _ in range(self.n):
+            self.bar_event.wait()
+            print("bar", end=" ")
+            self.bar_event.clear()
+            self.foo_event.set()
 
-// ❌ Bad — Type objects are shared
-lock (typeof(MyClass)) { }
 
-// ✅ Good
-private readonly object _lock = new();
-public void DoWork() { lock (_lock) { } }
+fb = FooBar(3)
+t1 = threading.Thread(target=fb.foo)
+t2 = threading.Thread(target=fb.bar)
+t1.start(); t2.start()
+t1.join(); t2.join()
+# Output: foobar foobar foobar
 ```
-
-**Q5: Difference between `Task.Run` and `Task.Factory.StartNew`?**
-> `Task.Run` is a shorthand for `Task.Factory.StartNew` with safe defaults (`TaskScheduler.Default`, `DenyChildAttach`). `StartNew` has pitfalls: it doesn't unwrap `Task<Task>`, and uses the current scheduler by default (which may be a UI scheduler). **Always prefer `Task.Run`** unless you need `LongRunning`.
 
 ---
 
-### Tricky Coding Questions
+### 16.8 Dining Philosophers
 
-**Q6: What's wrong with this code?**
+**Asked at:** LeetCode 1226, Google, Microsoft
 
-```csharp
-// ❌ Bug — closures capture the variable, not the value
-for (int i = 0; i < 10; i++)
-{
-    Task.Run(() => Console.WriteLine(i));
-}
-// Prints "10" ten times (or random values near 10)
+**Problem:** 5 philosophers at a round table. Each needs 2 forks to eat. Adjacent philosophers share a fork. Prevent deadlock.
 
-// ✅ Fix — capture a local copy
-for (int i = 0; i < 10; i++)
-{
-    int local = i;
-    Task.Run(() => Console.WriteLine(local));
-}
+**Concepts:** Deadlock avoidance via lock ordering
+
+```python
+import threading
+import time
+import random
+
+class DiningPhilosophers:
+    def __init__(self, n=5):
+        self.n = n
+        self.forks = [threading.Lock() for _ in range(n)]
+
+    def philosopher(self, phil_id):
+        left = phil_id
+        right = (phil_id + 1) % self.n
+
+        # Deadlock fix: always pick the lower-numbered fork first
+        first = min(left, right)
+        second = max(left, right)
+
+        for meal in range(3):
+            # Think
+            print(f"Philosopher {phil_id}: Thinking...")
+            time.sleep(random.uniform(0.1, 0.3))
+
+            # Pick up forks (in consistent order — no deadlock!)
+            self.forks[first].acquire()
+            self.forks[second].acquire()
+
+            # Eat
+            print(f"Philosopher {phil_id}: Eating meal {meal + 1}")
+            time.sleep(random.uniform(0.1, 0.2))
+
+            # Put down forks
+            self.forks[second].release()
+            self.forks[first].release()
+
+        print(f"Philosopher {phil_id}: Done!")
+
+
+dp = DiningPhilosophers(5)
+threads = [threading.Thread(target=dp.philosopher, args=(i,)) for i in range(5)]
+for t in threads: t.start()
+for t in threads: t.join()
 ```
 
-**Q7: Implement a thread-safe lazy initialization without `Lazy<T>`.**
+**Alternative: Limit Diners with Semaphore**
 
-```csharp
-public class DoubleCheckedLocking<T> where T : class, new()
-{
-    private volatile T _instance;
-    private readonly object _lock = new();
+```python
+class DiningPhilosophersV2:
+    def __init__(self, n=5):
+        self.n = n
+        self.forks = [threading.Lock() for _ in range(n)]
+        self.seats = threading.Semaphore(n - 1)  # Only N-1 can try at once
 
-    public T Instance
-    {
-        get
-        {
-            if (_instance == null)          // first check (no lock)
-            {
-                lock (_lock)
-                {
-                    if (_instance == null)  // second check (with lock)
-                        _instance = new T();
-                }
-            }
-            return _instance;
-        }
-    }
-}
+    def philosopher(self, phil_id):
+        left = phil_id
+        right = (phil_id + 1) % self.n
+
+        for meal in range(3):
+            self.seats.acquire()    # Limit concurrent diners → no deadlock
+            self.forks[left].acquire()
+            self.forks[right].acquire()
+
+            print(f"Philosopher {phil_id}: Eating meal {meal + 1}")
+            time.sleep(0.1)
+
+            self.forks[right].release()
+            self.forks[left].release()
+            self.seats.release()
 ```
-
-**Q8: What's the output? Why?**
-
-```csharp
-async Task Main()
-{
-    Console.WriteLine("1");
-    var task = DelayedPrint();
-    Console.WriteLine("3");
-    await task;
-    Console.WriteLine("5");
-}
-
-async Task DelayedPrint()
-{
-    Console.WriteLine("2");
-    await Task.Delay(100);
-    Console.WriteLine("4");
-}
-
-// Output: 1, 2, 3, 4, 5
-// "2" prints before "3" because async methods run synchronously until the first await
-```
-
-**Q9: Implement a read-write lock from scratch using Monitor.**
-
-```csharp
-public class ReadWriteLock
-{
-    private int _readers;
-    private bool _writing;
-    private readonly object _lock = new();
-
-    public void EnterRead()
-    {
-        lock (_lock)
-        {
-            while (_writing)
-                Monitor.Wait(_lock);
-            _readers++;
-        }
-    }
-
-    public void ExitRead()
-    {
-        lock (_lock)
-        {
-            _readers--;
-            if (_readers == 0)
-                Monitor.PulseAll(_lock);
-        }
-    }
-
-    public void EnterWrite()
-    {
-        lock (_lock)
-        {
-            while (_writing || _readers > 0)
-                Monitor.Wait(_lock);
-            _writing = true;
-        }
-    }
-
-    public void ExitWrite()
-    {
-        lock (_lock)
-        {
-            _writing = false;
-            Monitor.PulseAll(_lock);
-        }
-    }
-}
-```
-
-**Q10: Dining Philosophers — solve without deadlock.**
-
-```csharp
-public class DiningPhilosophers
-{
-    private readonly SemaphoreSlim[] _forks;
-    private readonly int _count;
-
-    public DiningPhilosophers(int count)
-    {
-        _count = count;
-        _forks = Enumerable.Range(0, count)
-            .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
-    }
-
-    public async Task PhilosopherAsync(int id)
-    {
-        int left = id;
-        int right = (id + 1) % _count;
-
-        // Resource ordering — always pick lower-numbered fork first
-        int first = Math.Min(left, right);
-        int second = Math.Max(left, right);
-
-        for (int meal = 0; meal < 3; meal++)
-        {
-            Console.WriteLine($"Philosopher {id}: Thinking...");
-            await Task.Delay(new Random().Next(100, 500));
-
-            await _forks[first].WaitAsync();
-            await _forks[second].WaitAsync();
-
-            Console.WriteLine($"Philosopher {id}: Eating (meal {meal + 1})");
-            await Task.Delay(new Random().Next(100, 300));
-
-            _forks[second].Release();
-            _forks[first].Release();
-        }
-    }
-}
-```
-
-**Q11: Implement `async/await`-based rate limiter.**
-
-```csharp
-public class AsyncRateLimiter
-{
-    private readonly SemaphoreSlim _semaphore;
-    private readonly TimeSpan _interval;
-    private readonly ConcurrentQueue<DateTime> _timestamps = new();
-
-    public AsyncRateLimiter(int maxRequests, TimeSpan interval)
-    {
-        _semaphore = new SemaphoreSlim(maxRequests, maxRequests);
-        _interval = interval;
-    }
-
-    public async Task<T> ThrottleAsync<T>(Func<Task<T>> action)
-    {
-        await _semaphore.WaitAsync();
-        try
-        {
-            return await action();
-        }
-        finally
-        {
-            _ = ReleaseAfterDelay();
-        }
-    }
-
-    private async Task ReleaseAfterDelay()
-    {
-        await Task.Delay(_interval);
-        _semaphore.Release();
-    }
-}
-
-// Usage: max 5 requests per second
-var limiter = new AsyncRateLimiter(5, TimeSpan.FromSeconds(1));
-var result = await limiter.ThrottleAsync(() => httpClient.GetStringAsync(url));
-```
-
-**Q12: What is the difference between `SemaphoreSlim` and `Semaphore`?**
-
-| | `SemaphoreSlim` | `Semaphore` |
-|---|---|---|
-| Scope | In-process only | Cross-process (named) |
-| Performance | Fast (user-mode) | Slow (kernel object) |
-| Async support | ✅ `WaitAsync()` | ❌ |
-| Use when | In-app throttling | Cross-process coordination |
-
-**Q13: How does `CancellationToken` work internally?**
-> `CancellationTokenSource` holds a flag. `CancellationToken` is a struct that reads from the same source. `Cancel()` sets the flag and invokes registered callbacks. `ThrowIfCancellationRequested()` checks the flag and throws `OperationCanceledException`. It's a cooperative model — code must check the token.
 
 ---
 
-## Quick Reference Cheat Sheet
+### 16.9 Blocking Queue
+
+**Asked at:** Amazon, Google, Uber, Goldman Sachs
+
+**Problem:** Implement a queue from scratch where `put()` blocks if full and `get()` blocks if empty.
+
+**Concepts:** Condition variables, graceful shutdown
+
+```python
+import threading
+from collections import deque
+
+class BlockingQueue:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        self.queue = deque()
+        self.lock = threading.Lock()
+        self.not_empty = threading.Condition(self.lock)
+        self.not_full = threading.Condition(self.lock)
+        self._shutdown = False
+
+    def put(self, item):
+        with self.not_full:
+            while len(self.queue) >= self.capacity:
+                if self._shutdown:
+                    raise RuntimeError("Queue is shut down")
+                self.not_full.wait()
+            self.queue.append(item)
+            self.not_empty.notify()
+
+    def get(self, timeout=None):
+        with self.not_empty:
+            while len(self.queue) == 0:
+                if self._shutdown:
+                    return None
+                if not self.not_empty.wait(timeout=timeout):
+                    raise TimeoutError("Timed out waiting for item")
+            item = self.queue.popleft()
+            self.not_full.notify()
+            return item
+
+    def size(self):
+        with self.lock:
+            return len(self.queue)
+
+    def shutdown(self):
+        with self.lock:
+            self._shutdown = True
+            self.not_empty.notify_all()
+            self.not_full.notify_all()
+```
+
+---
+
+### 16.10 Thread Pool from Scratch
+
+**Asked at:** Uber, Google, Amazon
+
+**Problem:** Implement a thread pool that accepts tasks, runs them on worker threads, and supports graceful shutdown.
+
+**Concepts:** Worker threads, task queue, shutdown coordination
+
+```python
+import threading
+from collections import deque
+
+class ThreadPool:
+    def __init__(self, num_workers: int):
+        self.tasks = deque()
+        self.lock = threading.Lock()
+        self.condition = threading.Condition(self.lock)
+        self.shutdown_flag = False
+        self.workers = []
+
+        for i in range(num_workers):
+            t = threading.Thread(target=self._worker, name=f"Worker-{i}", daemon=True)
+            t.start()
+            self.workers.append(t)
+
+    def _worker(self):
+        while True:
+            with self.condition:
+                while len(self.tasks) == 0 and not self.shutdown_flag:
+                    self.condition.wait()
+
+                if self.shutdown_flag and len(self.tasks) == 0:
+                    return  # Exit thread
+
+                task, args, kwargs = self.tasks.popleft()
+
+            # Execute OUTSIDE the lock — so other workers can pick up tasks
+            try:
+                task(*args, **kwargs)
+            except Exception as e:
+                print(f"{threading.current_thread().name}: Error — {e}")
+
+    def submit(self, task, *args, **kwargs):
+        with self.condition:
+            if self.shutdown_flag:
+                raise RuntimeError("Pool is shut down")
+            self.tasks.append((task, args, kwargs))
+            self.condition.notify()  # Wake one worker
+
+    def shutdown(self, wait=True):
+        with self.condition:
+            self.shutdown_flag = True
+            self.condition.notify_all()  # Wake all workers so they can exit
+
+        if wait:
+            for t in self.workers:
+                t.join()
+
+
+# Usage
+import time
+
+def process(task_id):
+    print(f"{threading.current_thread().name}: Processing task {task_id}")
+    time.sleep(0.5)
+    print(f"{threading.current_thread().name}: Done task {task_id}")
+
+pool = ThreadPool(num_workers=3)
+
+for i in range(10):
+    pool.submit(process, i)
+
+time.sleep(4)
+pool.shutdown(wait=True)
+print("All done!")
+```
+
+---
+
+### 16.11 Scheduled Task Executor (Uber)
+
+**Asked at:** Uber, Google, Amazon
+
+**Problem:** Implement a scheduler that can run tasks at a future time, or repeatedly at fixed intervals. Think: retry failed payments, send ride reminders, clean up expired surge pricing.
+
+**Concepts:** Min-heap for scheduling, condition variable with timeout
+
+```python
+import threading
+import time
+import heapq
+
+class ScheduledExecutor:
+    def __init__(self, num_workers=2):
+        self.task_queue = []        # Min-heap of (run_time, task_id, func, args, interval)
+        self.lock = threading.Lock()
+        self.condition = threading.Condition(self.lock)
+        self.task_counter = 0
+        self.shutdown_flag = False
+        self.workers = []
+
+        for i in range(num_workers):
+            t = threading.Thread(target=self._worker, daemon=True)
+            t.start()
+            self.workers.append(t)
+
+    def schedule(self, func, delay_seconds, *args):
+        """Run func once after delay_seconds."""
+        run_at = time.monotonic() + delay_seconds
+        with self.condition:
+            self.task_counter += 1
+            heapq.heappush(self.task_queue, (run_at, self.task_counter, func, args, 0))
+            self.condition.notify()
+
+    def schedule_at_fixed_rate(self, func, initial_delay, period, *args):
+        """Run func repeatedly every `period` seconds."""
+        run_at = time.monotonic() + initial_delay
+        with self.condition:
+            self.task_counter += 1
+            heapq.heappush(self.task_queue, (run_at, self.task_counter, func, args, period))
+            self.condition.notify()
+
+    def _worker(self):
+        while True:
+            with self.condition:
+                while True:
+                    if self.shutdown_flag:
+                        return
+
+                    if not self.task_queue:
+                        self.condition.wait()
+                        continue
+
+                    next_run_time = self.task_queue[0][0]
+                    now = time.monotonic()
+
+                    if now >= next_run_time:
+                        # Time to run!
+                        run_at, task_id, func, args, period = heapq.heappop(self.task_queue)
+                        break
+                    else:
+                        # Wait until next task is due (or new task arrives)
+                        self.condition.wait(timeout=next_run_time - now)
+
+            # Execute OUTSIDE the lock
+            try:
+                func(*args)
+            except Exception as e:
+                print(f"Task error: {e}")
+
+            # Reschedule if periodic
+            if period > 0:
+                with self.condition:
+                    self.task_counter += 1
+                    next_run = time.monotonic() + period
+                    heapq.heappush(self.task_queue,
+                                   (next_run, self.task_counter, func, args, period))
+                    self.condition.notify()
+
+    def shutdown(self):
+        with self.condition:
+            self.shutdown_flag = True
+            self.condition.notify_all()
+        for t in self.workers:
+            t.join()
+
+
+# Usage
+scheduler = ScheduledExecutor(num_workers=2)
+
+scheduler.schedule(lambda: print(f"[{time.strftime('%H:%M:%S')}] One-time task!"), 2)
+scheduler.schedule_at_fixed_rate(
+    lambda: print(f"[{time.strftime('%H:%M:%S')}] Heartbeat"), 0, 1
+)
+scheduler.schedule(lambda: print(f"[{time.strftime('%H:%M:%S')}] Delayed task!"), 5)
+
+time.sleep(6)
+scheduler.shutdown()
+```
+
+---
+
+### 16.12 Ride Matching System (Uber)
+
+**Asked at:** Uber machine coding rounds
+
+**Problem:** Build a concurrent ride matching system. Riders request rides, drivers go online/offline, and a matcher pairs them. Multiple matchers and requests happen concurrently.
+
+**Concepts:** Multiple condition variables, background worker thread, nearest-match algorithm
+
+```python
+import threading
+import time
+import random
+from collections import deque
+from dataclasses import dataclass
+from enum import Enum
+
+class RideStatus(Enum):
+    REQUESTED = "REQUESTED"
+    MATCHED = "MATCHED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+@dataclass
+class Location:
+    lat: float
+    lng: float
+
+    def distance_to(self, other):
+        return ((self.lat - other.lat)**2 + (self.lng - other.lng)**2) ** 0.5
+
+@dataclass
+class Driver:
+    id: str
+    name: str
+    location: Location
+    available: bool = True
+
+@dataclass
+class RideRequest:
+    id: str
+    rider_name: str
+    pickup: Location
+    dropoff: Location
+    status: RideStatus = RideStatus.REQUESTED
+    driver: Driver = None
+
+
+class RideMatchingSystem:
+    def __init__(self):
+        self.available_drivers = []
+        self.pending_requests = deque()
+        self.active_rides = {}              # ride_id → RideRequest
+        self.lock = threading.Lock()
+        self.new_request = threading.Condition(self.lock)
+        self.driver_available = threading.Condition(self.lock)
+        self.shutdown_flag = False
+
+        # Background matcher thread
+        self.matcher = threading.Thread(target=self._match_loop, daemon=True)
+        self.matcher.start()
+
+    def add_driver(self, driver: Driver):
+        with self.driver_available:
+            self.available_drivers.append(driver)
+            print(f"[SYSTEM] Driver {driver.name} is now online")
+            self.driver_available.notify_all()
+
+    def remove_driver(self, driver_id: str):
+        with self.lock:
+            self.available_drivers = [d for d in self.available_drivers if d.id != driver_id]
+
+    def request_ride(self, request: RideRequest):
+        with self.new_request:
+            self.pending_requests.append(request)
+            print(f"[RIDER]  {request.rider_name} requested ride {request.id}")
+            self.new_request.notify()
+
+    def complete_ride(self, ride_id: str):
+        with self.driver_available:
+            if ride_id in self.active_rides:
+                ride = self.active_rides.pop(ride_id)
+                ride.status = RideStatus.COMPLETED
+                ride.driver.available = True
+                self.available_drivers.append(ride.driver)
+                print(f"[DONE]   Ride {ride_id} completed. {ride.driver.name} is free")
+                self.driver_available.notify_all()
+
+    def _find_nearest_driver(self, pickup: Location):
+        if not self.available_drivers:
+            return None
+        return min(self.available_drivers, key=lambda d: d.location.distance_to(pickup))
+
+    def _match_loop(self):
+        while True:
+            with self.new_request:
+                while len(self.pending_requests) == 0 and not self.shutdown_flag:
+                    self.new_request.wait()
+                if self.shutdown_flag:
+                    return
+                request = self.pending_requests[0]
+
+            with self.driver_available:
+                while not self.available_drivers and not self.shutdown_flag:
+                    self.driver_available.wait(timeout=5)
+                if self.shutdown_flag:
+                    return
+
+                driver = self._find_nearest_driver(request.pickup)
+                if driver is None:
+                    continue
+                self.available_drivers.remove(driver)
+                driver.available = False
+
+            with self.lock:
+                if self.pending_requests and self.pending_requests[0] is request:
+                    self.pending_requests.popleft()
+                    request.driver = driver
+                    request.status = RideStatus.MATCHED
+                    self.active_rides[request.id] = request
+                    dist = driver.location.distance_to(request.pickup)
+                    print(f"[MATCH]  Ride {request.id} → Driver {driver.name} "
+                          f"(distance: {dist:.2f})")
+
+    def shutdown(self):
+        with self.new_request:
+            self.shutdown_flag = True
+            self.new_request.notify_all()
+        with self.driver_available:
+            self.driver_available.notify_all()
+
+
+# --- Simulation ---
+system = RideMatchingSystem()
+
+drivers = [
+    Driver("D1", "Alice", Location(40.7, -74.0)),
+    Driver("D2", "Bob",   Location(40.8, -73.9)),
+    Driver("D3", "Carol", Location(40.6, -74.1)),
+]
+for d in drivers:
+    system.add_driver(d)
+
+time.sleep(0.1)
+
+# Riders request rides concurrently
+def rider_thread(rider_id):
+    req = RideRequest(
+        id=f"R{rider_id}",
+        rider_name=f"Rider-{rider_id}",
+        pickup=Location(40.7 + random.uniform(-0.1, 0.1),
+                        -74.0 + random.uniform(-0.1, 0.1)),
+        dropoff=Location(40.8, -73.9),
+    )
+    system.request_ride(req)
+
+riders = [threading.Thread(target=rider_thread, args=(i,)) for i in range(5)]
+for r in riders: r.start()
+for r in riders: r.join()
+
+time.sleep(2)
+
+# Complete some rides → drivers free → pending rides get matched
+system.complete_ride("R0")
+system.complete_ride("R1")
+
+time.sleep(2)
+system.shutdown()
+```
+
+---
+
+### 16.13 Concurrent Web Crawler
+
+**Asked at:** Google, Meta, Amazon, LeetCode 1242
+
+**Problem:** Crawl pages starting from a URL. Multiple threads fetch pages concurrently. Don't visit the same URL twice.
+
+**Concepts:** Thread coordination, visited set, termination detection
+
+```python
+import threading
+import time
+import random
+from collections import deque
+
+class ConcurrentCrawler:
+    def __init__(self, num_workers=4):
+        self.visited = set()
+        self.visited_lock = threading.Lock()
+        self.queue = deque()
+        self.queue_lock = threading.Lock()
+        self.condition = threading.Condition(self.queue_lock)
+        self.active_workers = 0
+        self.results = []
+        self.results_lock = threading.Lock()
+        self.num_workers = num_workers
+
+    def crawl(self, start_url, get_links_func):
+        with self.visited_lock:
+            self.visited.add(start_url)
+        with self.condition:
+            self.queue.append(start_url)
+            self.condition.notify()
+
+        workers = []
+        for i in range(self.num_workers):
+            t = threading.Thread(target=self._worker, args=(get_links_func,))
+            t.start()
+            workers.append(t)
+
+        for t in workers:
+            t.join()
+        return self.results
+
+    def _worker(self, get_links_func):
+        while True:
+            with self.condition:
+                while len(self.queue) == 0:
+                    if self.active_workers == 0:
+                        self.condition.notify_all()
+                        return  # No work and no one working → done
+                    self.condition.wait(timeout=1)
+                    if len(self.queue) == 0 and self.active_workers == 0:
+                        self.condition.notify_all()
+                        return
+
+                url = self.queue.popleft()
+                self.active_workers += 1
+
+            # Fetch page (outside lock)
+            try:
+                links = get_links_func(url)
+                with self.results_lock:
+                    self.results.append(url)
+
+                with self.visited_lock:
+                    new_urls = [u for u in links if u not in self.visited]
+                    self.visited.update(new_urls)
+
+                with self.condition:
+                    for u in new_urls:
+                        self.queue.append(u)
+                    self.condition.notify_all()
+            finally:
+                with self.condition:
+                    self.active_workers -= 1
+                    if self.active_workers == 0 and len(self.queue) == 0:
+                        self.condition.notify_all()
+
+
+# Mock web graph
+web_graph = {
+    "example.com":   ["example.com/a", "example.com/b"],
+    "example.com/a": ["example.com/c", "example.com/d"],
+    "example.com/b": ["example.com/d", "example.com/e"],
+    "example.com/c": [],
+    "example.com/d": ["example.com/e"],
+    "example.com/e": [],
+}
+
+def mock_fetch(url):
+    time.sleep(random.uniform(0.1, 0.3))
+    return web_graph.get(url, [])
+
+crawler = ConcurrentCrawler(num_workers=3)
+results = crawler.crawl("example.com", mock_fetch)
+print(f"\nCrawled {len(results)} pages: {results}")
+```
+
+---
+
+### 16.14 Traffic Signal Controller
+
+**Asked at:** Uber, Goldman Sachs
+
+**Problem:** A 4-way intersection with traffic lights. Cars arrive on different roads. Only one direction can have green. Cars wait until their direction is green.
+
+**Concepts:** Condition variables, background cycling thread
+
+```python
+import threading
+import time
+import random
+from enum import Enum
+
+class Direction(Enum):
+    NORTH_SOUTH = "NORTH_SOUTH"
+    EAST_WEST = "EAST_WEST"
+
+class TrafficSignal:
+    def __init__(self, green_duration=3):
+        self.current_green = Direction.NORTH_SOUTH
+        self.lock = threading.Lock()
+        self.ns_green = threading.Condition(self.lock)
+        self.ew_green = threading.Condition(self.lock)
+        self.green_duration = green_duration
+        self.running = True
+
+        self.signal_thread = threading.Thread(target=self._cycle, daemon=True)
+        self.signal_thread.start()
+
+    def _cycle(self):
+        while self.running:
+            time.sleep(self.green_duration)
+            with self.lock:
+                if self.current_green == Direction.NORTH_SOUTH:
+                    self.current_green = Direction.EAST_WEST
+                    print(f"\n--- GREEN: EAST-WEST | RED: NORTH-SOUTH ---")
+                    self.ew_green.notify_all()
+                else:
+                    self.current_green = Direction.NORTH_SOUTH
+                    print(f"\n--- GREEN: NORTH-SOUTH | RED: EAST-WEST ---")
+                    self.ns_green.notify_all()
+
+    def cross(self, car_id: str, direction: Direction):
+        with self.lock:
+            while self.current_green != direction:
+                if direction == Direction.NORTH_SOUTH:
+                    self.ns_green.wait()
+                else:
+                    self.ew_green.wait()
+            print(f"  Car {car_id} crossing ({direction.value})")
+
+    def stop(self):
+        self.running = False
+
+
+signal = TrafficSignal(green_duration=2)
+
+def car(car_id, direction):
+    time.sleep(random.uniform(0, 3))
+    print(f"Car {car_id} arrives ({direction.value})")
+    signal.cross(car_id, direction)
+
+threads = []
+for i in range(10):
+    d = random.choice([Direction.NORTH_SOUTH, Direction.EAST_WEST])
+    threads.append(threading.Thread(target=car, args=(f"C{i}", d)))
+
+for t in threads: t.start()
+for t in threads: t.join()
+signal.stop()
+```
+
+---
+
+### 16.15 Async Job Scheduler
+
+**Asked at:** Uber, Meta, Google
+
+**Problem:** A job scheduler that accepts jobs with dependencies (DAG). A job runs only after all its dependencies complete. Independent jobs run concurrently.
+
+**Concepts:** Topological ordering, dynamic readiness tracking, thread pool
+
+```python
+import threading
+import time
+from collections import defaultdict, deque
+
+class Job:
+    def __init__(self, job_id: str, func, dependencies=None):
+        self.id = job_id
+        self.func = func
+        self.dependencies = dependencies or []
+
+class JobScheduler:
+    def __init__(self, num_workers=4):
+        self.num_workers = num_workers
+
+    def execute(self, jobs: list):
+        # Build graph
+        graph = {}
+        in_degree = defaultdict(int)
+        dependents = defaultdict(list)
+
+        for job in jobs:
+            graph[job.id] = job
+            in_degree[job.id] = len(job.dependencies)
+            for dep in job.dependencies:
+                dependents[dep].append(job.id)
+
+        lock = threading.Lock()
+        condition = threading.Condition(lock)
+        ready_queue = deque()
+        completed = set()
+        total = len(jobs)
+
+        # Seed: jobs with no dependencies
+        for job in jobs:
+            if in_degree[job.id] == 0:
+                ready_queue.append(job.id)
+
+        def worker():
+            while True:
+                with condition:
+                    while len(ready_queue) == 0:
+                        if len(completed) == total:
+                            return
+                        condition.wait()
+                    if len(completed) == total:
+                        return
+                    job_id = ready_queue.popleft()
+
+                # Execute outside lock
+                job = graph[job_id]
+                print(f"[{threading.current_thread().name}] Running: {job_id}")
+                try:
+                    job.func()
+                except Exception as e:
+                    print(f"Job {job_id} failed: {e}")
+
+                # Unblock dependents
+                with condition:
+                    completed.add(job_id)
+                    for dep_id in dependents[job_id]:
+                        in_degree[dep_id] -= 1
+                        if in_degree[dep_id] == 0:
+                            ready_queue.append(dep_id)
+                    condition.notify_all()
+
+        workers = [threading.Thread(target=worker, name=f"W-{i}")
+                   for i in range(self.num_workers)]
+        for w in workers: w.start()
+        for w in workers: w.join()
+        print("All jobs completed!")
+
+
+# Diamond dependency: A,B → C → D. E is independent.
+def make_task(name, duration=0.5):
+    def task():
+        time.sleep(duration)
+        print(f"  >> {name} done")
+    return task
+
+jobs = [
+    Job("A", make_task("A")),
+    Job("B", make_task("B")),
+    Job("C", make_task("C"), dependencies=["A", "B"]),
+    Job("D", make_task("D"), dependencies=["C"]),
+    Job("E", make_task("E")),  # Independent — runs in parallel with A,B
+]
+
+scheduler = JobScheduler(num_workers=3)
+scheduler.execute(jobs)
+```
+
+---
+
+## 17. Interview Quick Reference
+
+### Python Concurrency Primitives
 
 ```
-Synchronization Primitives:
-  lock / Monitor            → In-process mutual exclusion (reentrant)
-  Mutex                     → Cross-process mutual exclusion
-  SemaphoreSlim             → Limit N concurrent accessors (in-process)
-  ReaderWriterLockSlim      → Many readers OR one writer
-  SpinLock                  → User-mode spin for very short critical sections
-
-Signaling:
-  ManualResetEventSlim      → Gate — open/close for all threads
-  AutoResetEvent            → Turnstile — releases one thread per Set()
-  CountdownEvent            → Wait for N signals
-  Barrier                   → Sync threads at phase boundaries
-
-Atomic / Lock-Free:
-  Interlocked               → Lock-free atomic operations (CAS)
-  volatile                  → Prevent caching/reordering of field
-  Volatile.Read/Write       → Acquire/release memory barriers
-
-Collections:
-  ConcurrentDictionary      → Thread-safe dictionary (lock striping)
-  ConcurrentQueue/Stack     → Lock-free FIFO/LIFO
-  BlockingCollection        → Blocking producer-consumer wrapper
-  Channel<T>                → High-perf async producer-consumer
-  ImmutableList/Dict        → Copy-on-write, inherently thread-safe
-  FrozenDictionary          → Read-optimized immutable (.NET 8+)
-
-Async / Task:
-  Task.Run                  → Queue CPU work to ThreadPool
-  async/await               → Cooperative async I/O (not threading!)
-  ValueTask<T>              → Avoid allocation for cached results
-  IAsyncEnumerable<T>       → Async streaming / iteration
-  CancellationToken         → Cooperative cancellation
-  PeriodicTimer             → Non-reentrant async timer (.NET 6+)
-
-Thread-Local:
-  [ThreadStatic]            → Per-thread static field (no init propagation)
-  ThreadLocal<T>            → Per-thread with factory (doesn't flow async)
-  AsyncLocal<T>             → Flows across await (correlation IDs, context)
-
-Parallelism:
-  Parallel.ForEach          → Data parallelism across cores
-  Parallel.ForEachAsync     → Async-friendly parallel loop (.NET 6+)
-  PLINQ (.AsParallel())     → Parallel LINQ queries
-  Task.WhenAll              → Fork-join for async tasks
-
-Problems:
-  Race condition            → Non-atomic read-modify-write
-  Deadlock                  → Circular wait on locks
-  Livelock                  → Threads run but make no progress
-  Starvation                → Thread never gets CPU/lock
-  Priority inversion        → High blocked by low via medium
-  False sharing             → Cache line contention (hardware)
+Primitive              | Import                    | What It Does
+-----------------------|---------------------------|-------------------------------------
+Lock                   | threading.Lock()          | Mutual exclusion (1 thread at a time)
+RLock                  | threading.RLock()         | Same thread can acquire multiple times
+Condition              | threading.Condition()     | wait/notify for coordination
+Semaphore              | threading.Semaphore(N)    | Allow N concurrent threads
+BoundedSemaphore       | threading.BoundedSemaphore(N) | Errors on over-release
+Event                  | threading.Event()         | Simple boolean flag for signaling
+Barrier                | threading.Barrier(N)      | Wait for N threads at checkpoint
+Queue                  | queue.Queue(maxsize)      | Thread-safe FIFO (blocks full/empty)
+Timer                  | threading.Timer(secs, fn) | Run function after delay
+ThreadPoolExecutor     | concurrent.futures        | Reusable thread pool
+asyncio.Lock           | asyncio                   | Async-compatible lock
 ```
+
+### Decision Flowchart
+
+```
+What kind of work?
+  │
+  ├── I/O-bound (network, disk, DB)
+  │     ├── Few concurrent ops       → threading.Thread
+  │     ├── Many concurrent ops      → ThreadPoolExecutor
+  │     └── Very many (10K+)         → asyncio
+  │
+  └── CPU-bound (math, processing)
+        ├── Can parallelize           → ProcessPoolExecutor
+        └── Can't parallelize         → optimize algorithm
+```
+
+### Common Interview Q&A
+
+| Question | Answer |
+|----------|--------|
+| What is the GIL? | Python lock allowing only one thread to run bytecode at a time |
+| Threads useful despite GIL? | Yes — GIL released during I/O |
+| Lock vs RLock? | RLock lets same thread acquire multiple times; Lock deadlocks |
+| Why `while` not `if` with `wait()`? | Spurious wakeups — thread can wake without notify |
+| `notify()` vs `notify_all()`? | `notify()` wakes one, `notify_all()` wakes all |
+| How to prevent deadlock? | Consistent lock ordering, timeouts, or acquire all atomically |
+| Semaphore vs Lock? | Lock = 1 thread max. Semaphore = N threads max |
+| Event vs Condition? | Event = simple flag. Condition = flag + built-in lock |
+| `queue.Queue` vs `deque`? | Queue = thread-safe blocking. deque = fast, single-thread/DSA |
+| Thread vs Process? | Thread shares memory (fast, risky). Process isolated (slow, safe) |
+| When to use asyncio? | High-concurrency I/O (thousands of connections, one thread) |
+
+### Machine Coding Round Tips
+
+1. **Clarify first:** Ask about scale, thread count, fairness, and shutdown behavior
+2. **Draw the model:** Which threads exist? What do they share? Where are the critical sections?
+3. **Identify shared state:** Every shared mutable variable needs a lock
+4. **Pick the right primitive:** Don't use Condition when Event suffices
+5. **Always use `with` for locks:** Prevents forgetting to release
+6. **Always use `while` with `wait()`:** Handles spurious wakeups
+7. **Keep critical sections minimal:** Do I/O and computation outside locks
+8. **Walk through with 2-3 threads:** Show the interviewer there's no race condition
+9. **Handle shutdown:** Show you can gracefully stop worker threads
+10. **State complexity:** Time and space for each operation
