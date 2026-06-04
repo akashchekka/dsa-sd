@@ -1,0 +1,8 @@
+from enum import Enum
+
+
+class RateLimiterType(Enum):
+    TOKEN_BUCKET = "TOKEN_BUCKET"
+    LEAKY_BUCKET = "LEAKY_BUCKET"
+    FIXED_WINDOW = "FIXED_WINDOW"
+    SLIDING_WINDOW = "SLIDING_WINDOW"

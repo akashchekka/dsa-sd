@@ -9,6 +9,23 @@ cd machine-coding-py
 python -m parking_lot
 ```
 
+## The subject
+
+**Problem.** Model a real-world parking garage: multiple floors, spots of different sizes, vehicles of different sizes, time-based billing. A car drives up → gets a spot → eventually exits → pays.
+
+**Why it's a classic interview problem.** It looks trivial but stresses every LLD skill:
+
+- **Entity modeling** — what is a `Vehicle`? A `Spot`? A `Ticket`? Who owns whom?
+- **Polymorphism** — vehicle types and spot types vary; can a motorcycle park in a car spot? (yes) Can a truck park in a motorcycle spot? (no)
+- **Strategy selection** — *which* spot do you give the next car? Nearest entrance? First-fit? Least-occupied floor? Each is a policy that should be swappable.
+- **Pricing variation** — flat fee, hourly, surge, monthly pass — same domain, many billing rules.
+- **Concurrency** — two cars at two gates may grab the same spot.
+- **Extensibility** — the question always evolves mid-interview: "now add EV charging spots," "now add reservations," "now make it a chain of lots."
+
+The core insight is that **structure and policy are different concerns**. Spots, floors, tickets are *structure*. Allocation and pricing are *policy*. Confusing them produces code where adding EV support requires editing 12 files.
+
+**Core concepts exercised.** Strategy pattern, Factory pattern, Open/Closed Principle, value vs. entity objects, time as an injected dependency (`IClock`), and the Façade pattern (`ParkingLot` hides the floor/spot/strategy machinery from callers).
+
 ## What's implemented
 
 A `ParkingLot` made of `ParkingFloor`s. A vehicle drives in → the lot asks an **allocation strategy** for a fitting free spot → a `Ticket` is issued. On exit, a **pricing strategy** computes the amount due based on entry/exit times from an injected `IClock`.
