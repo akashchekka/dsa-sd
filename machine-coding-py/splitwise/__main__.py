@@ -25,16 +25,35 @@ for s in service.simplify_debts():
 
 # --- named group: equal split ---------------------------------------------
 service.create_group("goa", "Trip to Goa", ["u1", "u2", "u3"])
-service.add_expense(
+goa_dinner_id = service.add_expense(
     group_id="goa",
     payer_id="u1",
     amount=300,
     participants=["u1", "u2", "u3"],
     split_strategy=EqualSplitStrategy(),
 )
-print("goa settlements:")
+goa_taxi_id = service.add_expense(
+    group_id="goa",
+    payer_id="u2",
+    amount=60,
+    participants=["u1", "u2", "u3"],
+    split_strategy=EqualSplitStrategy(),
+)
+print("goa settlements (dinner + taxi):")
 for s in service.simplify_debts("goa"):
     print(" ", s)
+
+# --- remove the taxi expense and re-settle --------------------------------
+service.remove_expense(goa_taxi_id, group_id="goa")
+print("goa settlements (after removing taxi):")
+for s in service.simplify_debts("goa"):
+    print(" ", s)
+
+# removing an unknown id fails fast
+try:
+    service.remove_expense("not-a-real-id", group_id="goa")
+except ValueError as ex:
+    print(f"[rejected] remove unknown -> {ex}")
 
 # --- named group: exact split ---------------------------------------------
 service.create_group("roommates", "Roommates", ["u1", "u4"])

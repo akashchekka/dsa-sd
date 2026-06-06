@@ -27,5 +27,16 @@ class BalanceSheet:
             self._net[user] -= share
         self._net[payer_id] += amount
 
+    def reverse_expense(
+        self,
+        payer_id: str,
+        amount: float,
+        shares: dict[str, float],
+    ) -> None:
+        """Inverse of record_expense — used when an expense is removed."""
+        for user, share in shares.items():
+            self._net[user] += share
+        self._net[payer_id] -= amount
+
     def snapshot(self) -> dict[str, float]:
         return dict(self._net)

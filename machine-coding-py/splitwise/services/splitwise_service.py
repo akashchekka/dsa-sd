@@ -85,13 +85,16 @@ class SplitwiseService:
         split_strategy: SplitStrategy,
         group_id: str | None = None,
         **kwargs: Any,
-    ) -> None:
+    ) -> str:
         group = self._group(group_id or GLOBAL_GROUP_ID)
         self._validator.validate(group, payer_id, amount, participants)
 
         shares = split_strategy.calculate_shares(amount, participants, **kwargs)
 
-        group.record_expense(payer_id, amount, shares)
+        return group.record_expense(payer_id, amount, shares)
+
+    def remove_expense(self, expense_id: str, group_id: str | None = None) -> None:
+        self._group(group_id or GLOBAL_GROUP_ID).remove_expense(expense_id)
 
     # --- settlement ----------------------------------------------------------
 
