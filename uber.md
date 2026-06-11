@@ -120,6 +120,136 @@ Based on recent 2025–26 interview reports, these are the highest-frequency Ube
 
 ---
 
+## 🛠️ Machine Coding Round — Must-See Designs
+
+Uber's machine coding round is **60–90 min**, single problem, working code on your laptop. They grade: **clean OOP boundaries**, **extensibility (strategy / factory / observer)**, **thread-safety where it matters**, **a runnable `__main__` with a demo**, and **clear naming**. No frameworks — pure language + stdlib.
+
+### 📦 Your current coverage (`machine-coding-py/`)
+
+| Design | Folder | Status | Uber relevance |
+|---|---|---|---|
+| Ride Sharing | [ride_sharing](machine-coding-py/ride_sharing/) | ✅ | **Signature — must polish** |
+| LRU Cache | [lru_cache](machine-coding-py/lru_cache/) | ✅ | Very high |
+| Rate Limiter | [rate_limiter](machine-coding-py/rate_limiter/) | ✅ | Very high |
+| Parking Lot | [parking_lot](machine-coding-py/parking_lot/) | ✅ | High (classic OOP) |
+| Splitwise | [splitwise](machine-coding-py/splitwise/) | ✅ | High |
+| Elevator | [elevator_system](machine-coding-py/elevator_system/) | ✅ | Medium-High |
+| Notification Service | [notification_service](machine-coding-py/notification_service/) | ✅ | High (strategy + observer) |
+| Pub/Sub | [pub_sub](machine-coding-py/pub_sub/) | ✅ | High |
+| Logging Framework | [logging_framework](machine-coding-py/logging_framework/) | ✅ | Medium |
+
+> Your inventory is **strong** — most of Uber's repertoire is already covered. Focus on **polishing the top 3** and **filling the 4 missing high-value ones** below.
+
+---
+
+### 🎯 Tier 1 — Highest probability for Uber (must be flawless)
+
+| # | Problem | You have it? | What interviewers probe |
+|---|---|---|---|
+| 1 | **Ride Sharing / Cab Booking** | ✅ | Matching strategy (nearest / ETA), surge pricing strategy, trip state machine, cab tiers, driver availability, concurrency on `request()` |
+| 2 | **LRU Cache** (extend to LFU + TTL) | ✅ LRU | OrderedDict vs DLL+HashMap, generic `<K,V>`, thread-safety, eviction policy as strategy |
+| 3 | **Rate Limiter** | ✅ | Token bucket, leaky bucket, sliding window — all swappable; per-user keys; thread-safe counter |
+| 4 | **Parking Lot** | ✅ | Multi-floor, multi-vehicle-size, ticketing, pricing strategy, spot allocation strategy, payment |
+| 5 | **Splitwise** | ✅ | Equal/exact/percentage splits as strategy, balance sheet per pair, simplify-debts graph algorithm |
+
+**Polish checklist for each:**
+- [ ] Interfaces in `interfaces/`, concrete impls in `strategies/`
+- [ ] Service class composes strategies via constructor injection (DI)
+- [ ] `__main__.py` runs a real scenario end-to-end
+- [ ] `threading.Lock` around mutating ops (registries, balances, slots)
+- [ ] Enums for status / type (not raw strings)
+- [ ] No business logic in models — keep them dataclasses
+
+---
+
+### 🟡 Tier 2 — High probability (you have these, polish them)
+
+| # | Problem | You have it? | Key extensions to add if asked |
+|---|---|---|---|
+| 6 | **Notification Service** | ✅ | Add **retry with backoff**, **priority queue**, **template engine** |
+| 7 | **Pub/Sub** | ✅ | Add **topic filtering**, **at-least-once delivery**, **consumer groups** |
+| 8 | **Elevator System** | ✅ | Add **multi-elevator dispatch**, **SCAN / LOOK** algorithm, **priority requests** |
+| 9 | **Logging Framework** | ✅ | Add **async appender**, **rolling file**, **log levels filter chain** |
+
+---
+
+### 🔴 Tier 3 — Missing from your repo (add these — high Uber yield)
+
+These show up in Uber machine coding rounds and you do not have them yet. Each is **~90 min to build cleanly**.
+
+| # | Problem | Why Uber loves it | Core abstractions |
+|---|---|---|---|
+| 10 | **In-Memory Key-Value Store (with TTL)** | Tests storage + expiry + thread-safety | `Store`, `ExpiryPolicy`, background reaper thread, `get/put/delete` |
+| 11 | **Cab Booking Surge / Dynamic Pricing** *(extend ride-sharing)* | Direct Uber domain | `SurgeCalculator` (zone-based), demand counter, decay window |
+| 12 | **Food Delivery / Order Tracking** | Uber Eats domain | `Order` state machine (PLACED→PREPARING→PICKED_UP→DELIVERED), `Restaurant`, `DeliveryAgent` matching |
+| 13 | **Distributed ID Generator (Snowflake-lite)** | Uber wrote one (TChannel era) | 64-bit ID: timestamp + machine-id + sequence, thread-safe sequence |
+| 14 | **Calendar / Meeting Scheduler** | Asked in onsite rounds | `Room`, `Booking`, **interval-tree** or sorted list, conflict detection, recurring meetings |
+| 15 | **Online Ticket Booking (BookMyShow-style)** | Tests reservation + concurrency | `Show`, `Seat`, **hold-with-timeout** (2-phase reserve→confirm), pessimistic lock per seat |
+| 16 | **Vending Machine / ATM** | Classic state machine | State pattern: `IdleState`, `SelectingState`, `PayingState`, `DispensingState` |
+| 17 | **Chess / Checkers** | Tests rules engine + polymorphism | `Piece` hierarchy with `validMoves(board)`, `Board`, `Game`, move history (undo) |
+| 18 | **Library Management** | Easy warm-up if asked | `Book`, `Member`, `Loan`, fine calculator strategy, reservation queue |
+
+> **Pick 4–6 from Tier 3** to scaffold this week. Suggested priority: **#10 KV-store with TTL**, **#13 Snowflake ID**, **#15 Ticket booking with hold**, **#14 Meeting scheduler**.
+
+---
+
+### 🧱 Reference structure (already what your repo uses — keep it consistent)
+
+```
+<design>/
+  __init__.py
+  __main__.py            # runnable demo
+  README.md              # problem statement + design notes
+  interfaces/            # ABCs — IMatchingStrategy, IPricingStrategy, ...
+  models/                # @dataclass entities + Enums
+  services/              # orchestrator class (composes strategies)
+  strategies/            # concrete pluggable behaviors
+```
+
+Run from `machine-coding-py/`: `python -m <design>`.
+
+---
+
+### 🏗️ Patterns to weave into every design (Uber checks for these)
+
+| Pattern | Where to apply |
+|---|---|
+| **Strategy** | Pricing, matching, eviction, retry, splits |
+| **Factory** | Building strategy or notifier from config / type enum |
+| **Observer / Pub-Sub** | Notification, order status, trip events |
+| **State Machine** | Trip, Order, Vending machine, Booking |
+| **Singleton (sparingly)** | Logger, ID generator |
+| **Dependency Injection** | Pass strategies into service via constructor — never `new` inside |
+| **Repository** | In-memory dict-backed store hidden behind an interface so you can swap later |
+
+---
+
+### ⏱️ 90-minute execution template (for round day)
+
+| Min | Activity |
+|---|---|
+| 0–8 | Clarify: scope, must-have vs nice-to-have, scale, concurrency expectations, persistence (usually in-memory) |
+| 8–15 | Sketch class diagram on paper / comment block: entities, services, interfaces, enums |
+| 15–25 | Define **models + enums + interfaces** first (compiles, no logic) |
+| 25–60 | Implement service + 1 strategy per interface; **`__main__` runs a happy path** |
+| 60–75 | Add 2nd strategy to prove extensibility; add concurrency lock; add one edge case |
+| 75–85 | Write 2–3 assertions in `__main__` (acts as test) |
+| 85–90 | Walk interviewer through code, point out extension points, state trade-offs |
+
+---
+
+### 🚫 Common dings in Uber machine coding
+
+1. **God-class service** doing matching + pricing + state transitions inline → split via strategy.
+2. **Strings instead of Enums** for status / type.
+3. **Logic in `models/`** → models should be dumb dataclasses.
+4. **No `__main__` demo** → interviewer can't see it work.
+5. **No locking** on shared mutable state when multi-threading is in scope.
+6. **`if isinstance(x, Foo)` chains** instead of polymorphism.
+7. **No extensibility story** — interviewer asks "how would you add UPI?" and you have to refactor.
+
+---
+
 ## TL;DR
 
 You're ~75% ready. **Spend Days 1–2 entirely on DP** (your one real gap), Day 3 on the 4 Uber-signature problems you're missing (Bus Routes, Hit Counter, RandomizedSet O(1), Serialize/Deserialize Tree), and Days 4–5 patching strings and a few tree/graph holes. You'll walk in confident.
