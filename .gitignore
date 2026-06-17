@@ -2,3 +2,4 @@
 .venv
 *.pyc
 .memor/
+test.ipynb
