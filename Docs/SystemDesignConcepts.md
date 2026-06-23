@@ -90,6 +90,10 @@
     - [Token Bucket vs Leaky Bucket](#token-bucket-vs-leaky-bucket)
     - [Which Algorithm Should You Choose?](#which-algorithm-should-you-choose)
   - [Backpressure and Load Shedding](#backpressure-and-load-shedding)
+  - [Probabilistic Data Structures](#probabilistic-data-structures)
+    - [Bloom Filter](#bloom-filter)
+    - [Count-Min Sketch](#count-min-sketch)
+    - [HyperLogLog](#hyperloglog)
   - [Search Systems](#search-systems)
     - [Inverted Index](#inverted-index)
     - [Ranking Signals](#ranking-signals)
@@ -2119,6 +2123,92 @@ Examples:
 Interview mental model:
 
 > It is better to reject some work cleanly than accept everything and fail everything.
+
+---
+
+## Probabilistic Data Structures
+
+Probabilistic data structures trade a small, bounded error for huge savings in memory and time. They are used when an exact answer is too expensive and an approximate answer is good enough.
+
+They share three properties:
+
+- Fixed or tiny memory, independent of how much data you process.
+- Constant time inserts and queries.
+- Approximate answers with a known error bound.
+
+| Structure | Question it answers | Error type |
+|---|---|---|
+| Bloom Filter | Have I seen this item? | False positives, never false negatives |
+| Count-Min Sketch | How many times have I seen this item? | Overcounts, never undercounts |
+| HyperLogLog | How many distinct items have I seen? | ~0.81% standard error |
+
+### Bloom Filter
+
+A Bloom filter answers set membership: "is this element possibly in the set, or definitely not?"
+
+It is a bit array plus `k` hash functions. To add an item, hash it `k` times and set those bits. To check an item, hash it `k` times and read those bits.
+
+- If any bit is 0, the item is **definitely not** present.
+- If all bits are 1, the item is **probably** present (could be a false positive from other items setting the same bits).
+
+It never produces false negatives. Standard Bloom filters do not support deletion (counting Bloom filters do).
+
+Uses:
+
+- Skip a slow disk or DB lookup when the key is definitely absent (e.g. LSM-tree / Cassandra SSTable reads).
+- Avoid recrawling already-seen URLs.
+- Filter out usernames or cache keys that cannot exist.
+
+### Count-Min Sketch
+
+A Count-Min Sketch estimates the frequency of items in a stream using a small 2D array of counters and several hash functions.
+
+To add an item, hash it with each row's function and increment one counter per row. To query frequency, take the **minimum** counter across the rows (minimum reduces the effect of hash collisions inflating the count).
+
+It can overcount but never undercounts. Good for finding "heavy hitters" (top-K frequent items) in high-volume streams.
+
+Uses:
+
+- Trending hashtags or top search queries.
+- Detecting heavy-hitter IPs in network traffic.
+- Frequency-based rate limiting at scale.
+
+### HyperLogLog
+
+HyperLogLog estimates **cardinality** - the number of distinct elements in a set - using a tiny, fixed amount of memory (often ~1.5 KB) even for billions of items, with a standard error around **0.81%**.
+
+The problem: counting unique items exactly (unique visitors, unique IPs) normally requires storing every item, so memory grows with the number of distinct elements. HyperLogLog avoids this.
+
+Core intuition:
+
+- Hash each element into a uniformly random bit string.
+- Count the number of leading zeros in the hash.
+- Seeing a hash with `k` leading zeros is rare and suggests you have processed roughly `2^k` distinct elements.
+
+A single estimator is very noisy, so HyperLogLog:
+
+- Uses the first `p` bits of the hash to pick one of `m = 2^p` registers.
+- Each register stores the maximum leading-zero count seen for its bucket.
+- Combines registers with a harmonic mean (which suppresses outliers) and a bias-correction constant.
+
+Error scales as roughly `1.04 / sqrt(m)`, so more registers means more accuracy.
+
+Key properties:
+
+- Mergeable: combine two HLLs by taking the max of each register. Perfect for distributed counting (count per shard, then merge).
+- Constant memory, independent of cardinality.
+- O(1) insert and query.
+- Approximate, not exact.
+
+Uses:
+
+- Unique visitors, unique viewers, distinct search terms.
+- Redis `PFADD` / `PFCOUNT` / `PFMERGE`.
+- `APPROX_COUNT_DISTINCT` in BigQuery, Presto, Redshift.
+
+Interview mental model:
+
+> Reach for these when an exact answer needs too much memory and a small, bounded error is acceptable. Bloom = membership, Count-Min = frequency, HyperLogLog = distinct count.
 
 ---
 
