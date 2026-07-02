@@ -1,6 +1,5 @@
 from collections import defaultdict, OrderedDict
 
-
 class LFU:
     def __init__(self):
         self.key_to_freq = {}                     # key -> frequency
@@ -21,7 +20,7 @@ class LFU:
         if not self.freq_map[freq]:     # check if freq_map is empty after above delete
             del self.freq_map[freq]     # if yes, delete freq entry from freq_map
             if self.min_freq == freq:   
-                self.min_freq += 1      # increment min_freq if its equal to freq
+                self.min_freq += 1      # increment min_freq as freq is deleted from freq_map 
         self.freq_map[freq + 1][k] = None         # appended at end = MRU
         self.key_to_freq[k] = freq + 1
 
@@ -42,4 +41,4 @@ class LFU:
         if not self.freq_map[freq]:
             del self.freq_map[freq]
             if self.min_freq == freq:
-                self.min_freq = min(self.freq_map, default=0)
+                self.min_freq = min(self.freq_map, 0)
