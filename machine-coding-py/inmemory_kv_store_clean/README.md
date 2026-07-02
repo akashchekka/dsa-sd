@@ -1,0 +1,1 @@
+Interview-friendly folder structure.
