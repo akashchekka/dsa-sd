@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-
 class FileSystemEntity(ABC):
-    def __init__(self, name: str) -> None:
-        self.name = name
+    name: str
 
     @abstractmethod
     def get_size(self) -> int: ...

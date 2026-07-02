@@ -30,9 +30,6 @@ class ExpenseValidator:
         if unknown:
             raise ValueError(f"Unknown participants: {sorted(unknown)}")
 
-        if len(set(participants)) != len(participants):
-            raise ValueError(f"Duplicate participants: {participants}")
-
         if not group.has_member(payer_id):
             raise ValueError(
                 f"Payer {payer_id!r} is not a member of group {group.group_id!r}"

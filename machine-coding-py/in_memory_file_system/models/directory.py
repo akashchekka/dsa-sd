@@ -9,7 +9,7 @@ from models.file_system_entity import FileSystemEntity
 
 class Directory(FileSystemEntity):
     def __init__(self, name: str) -> None:
-        super().__init__(name)
+        self.name = name
         self.children: Dict[str, FileSystemEntity] = {}
 
     def get_size(self) -> int:
