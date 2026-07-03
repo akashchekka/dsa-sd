@@ -33,7 +33,7 @@ class FixedWindowRateLimiter(RateLimiter):
                 time.time() / self.window_size_seconds
             )
 
-            if current_window != window.window_start:
+            if current_window != window.window_start: # Start of new Window 
                 window.window_start = current_window
                 window.request_count = 0
 
