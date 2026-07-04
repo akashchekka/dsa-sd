@@ -3,9 +3,8 @@ Pluggable: NoRetry, FixedDelay, ExponentialBackoff, ..."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable
-
+from typing import Callable
 
 class IRetryPolicy(ABC):
     @abstractmethod
-    async def execute(self, action: Callable[[], Awaitable[bool]]) -> bool: ...
+    def execute(self, action: Callable[[], bool]) -> bool: ...

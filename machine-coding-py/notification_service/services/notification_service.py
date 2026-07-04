@@ -1,14 +1,5 @@
-"""In-memory Pub/Sub. Topic -> list of subscriptions. Publishing fans out
-to all subscribers across whichever channel each subscribed with, each
-guarded by the configured retry policy.
-
-For production:
-  * Replace dict with a durable store (DB / Kafka).
-  * Each (topic, channel) gets its own queue + worker pool.
-  * Add dead-letter queue for messages that exhaust retries."""
 from __future__ import annotations
 
-import asyncio
 import itertools
 import threading
 from datetime import datetime, timezone
@@ -17,35 +8,73 @@ from interfaces.notification_channel import INotificationChannel
 from interfaces.retry_policy         import IRetryPolicy
 from models.notification             import Notification
 from models.subscription             import Channel, Subscription
+from services.topic                  import Topic
 
 
 class NotificationService:
-    def __init__(self, channels: list[INotificationChannel], retry: IRetryPolicy) -> None:
+    def __init__(self, channels: list[INotificationChannel], retry: IRetryPolicy, topic_capacity: int = 0) -> None:
         self._channels: dict[Channel, INotificationChannel] = {c.kind: c for c in channels}
-        self._retry    = retry
-        self._subs:    dict[str, list[Subscription]] = {}
-        self._lock     = threading.Lock()
-        self._seq      = itertools.count(1)
+        self._retry            = retry
+        self._topics: dict[str, Topic] = {}
+        self._lock             = threading.Lock()
+        self._closed           = False
+        self._topic_capacity   = topic_capacity
+        self._seq              = itertools.count(1)
 
-    def subscribe(self, s: Subscription) -> None:
+    def _get_or_create_topic(self, name: str) -> Topic:
+        if self._closed:
+            raise RuntimeError("NotificationService is shut down")
+        # Fast path: dict.get is atomic, so avoid locking when the topic exists.
+        topic = self._topics.get(name)
+        if topic is not None:
+            return topic
+
         with self._lock:
-            self._subs.setdefault(s.topic, []).append(s)
+            if self._closed:
+                raise RuntimeError("NotificationService is shut down")
+            topic = self._topics.get(name)  # re-check under lock
+            if topic is None:
+                topic = Topic(name, self._channels, self._retry, capacity=self._topic_capacity)
+                self._topics[name] = topic
+            return topic
 
-    async def publish(self, topic: str, body: str) -> None:
-        note = Notification(
-            id=f"N-{next(self._seq):05d}",
-            topic=topic, body=body,
-            created_at=datetime.now(timezone.utc),
-        )
+    def subscribe(self, subscription: Subscription) -> None:
+        self._get_or_create_topic(subscription.topic).add_subscription(subscription)
+
+    def unsubscribe(self, subscription: Subscription) -> None:
+        existing = self._topics.get(subscription.topic)
+        if existing is not None:
+            existing.remove_subscription(subscription)
+
+    def publish(
+        self,
+        topic: str,
+        body: str,
+        block: bool = True,
+        timeout: float | None = None,
+    ) -> Notification:
+        if self._closed:
+            raise RuntimeError("NotificationService is shut down")
         with self._lock:
-            snapshot = list(self._subs.get(topic, ()))
+            seq = next(self._seq)
+        note = Notification(id=f"N-{seq:05d}", topic=topic, body=body, created_at=datetime.now(timezone.utc))
+        self._get_or_create_topic(topic).publish(note, block=block, timeout=timeout)
+        return note
 
-        async def deliver(sub: Subscription) -> None:
-            ch = self._channels.get(sub.channel)
-            if ch is None:
+    def shutdown(self, timeout: float = 5.0) -> None:
+        with self._lock:
+            if self._closed:
                 return
-            ok = await self._retry.execute(lambda: ch.send(sub.address, note))
-            if not ok:
-                print(f"  DLQ: failed to deliver {note.id} to {sub.user_id} via {sub.channel.value}")
+            self._closed = True
+            topics = list(self._topics.values())
 
-        await asyncio.gather(*(deliver(s) for s in snapshot))
+        for topic in topics:            # signal every worker to drain and stop
+            topic.shutdown()
+        for topic in topics:            # then wait for them to finish
+            topic.join(timeout)
+
+    def __enter__(self) -> "NotificationService":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.shutdown()
