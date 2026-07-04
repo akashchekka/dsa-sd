@@ -275,6 +275,63 @@ that may no longer be valid.
 **One-liner:** *"I loop on `while` around `wait()` because waking doesn't guarantee
 the condition holds — spurious wakeups and lost races mean I must re-check."*
 
+```py
+def put(self, item, block=True, timeout=None):
+    with self.not_full:
+        if self.is_shutdown:
+            raise ShutDown
+        if self.maxsize > 0:
+            if not block:
+                if self._qsize() >= self.maxsize:
+                    raise Full
+            elif timeout is None:
+                while self._qsize() >= self.maxsize:
+                    self.not_full.wait()
+                    if self.is_shutdown:
+                        raise ShutDown
+            elif timeout < 0:
+                raise ValueError("'timeout' must be a non-negative number")
+            else:
+                endtime = time() + timeout
+                while self._qsize() >= self.maxsize:
+                    remaining = endtime - time()
+                    if remaining <= 0.0:
+                        raise Full
+                    self.not_full.wait(remaining)
+                    if self.is_shutdown:
+                        raise ShutDown
+        self._put(item)
+        self.unfinished_tasks += 1
+        self.not_empty.notify()
+
+def get(self, block=True, timeout=None):
+    with self.not_empty:
+        if self.is_shutdown and not self._qsize():
+            raise ShutDown
+        if not block:
+            if not self._qsize():
+                raise Empty
+        elif timeout is None:
+            while not self._qsize():
+                self.not_empty.wait()
+                if self.is_shutdown and not self._qsize():
+                    raise ShutDown
+        elif timeout < 0:
+            raise ValueError("'timeout' must be a non-negative number")
+        else:
+            endtime = time() + timeout
+            while not self._qsize():
+                remaining = endtime - time()
+                if remaining <= 0.0:
+                    raise Empty
+                self.not_empty.wait(remaining)
+                if self.is_shutdown and not self._qsize():
+                    raise ShutDown
+        item = self._get()
+        self.not_full.notify()
+        return item
+```
+
 ---
 
 ## 8. Backpressure: block vs. fail-fast
