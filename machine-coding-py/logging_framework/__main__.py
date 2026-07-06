@@ -1,13 +1,3 @@
-"""
-=============================================================================
- LoggingFramework — entry point
-=============================================================================
- Run:  python -m logging_framework   (from machine-coding-py/)
-
- Note: we don't use the stdlib `logging` module — the point of the round
- is to design one.
-=============================================================================
-"""
 from __future__ import annotations
 
 from models.log_level                import LogLevel

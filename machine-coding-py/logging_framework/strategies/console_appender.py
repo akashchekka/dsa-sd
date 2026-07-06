@@ -8,7 +8,6 @@ from interfaces.log_appender  import ILogAppender
 from interfaces.log_formatter import ILogFormatter
 from models.log_event         import LogEvent
 
-
 class ConsoleAppender(ILogAppender):
     def __init__(self, formatter: ILogFormatter) -> None:
         self._formatter = formatter

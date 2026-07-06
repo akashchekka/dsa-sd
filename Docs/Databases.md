@@ -54,6 +54,8 @@ The slot array grows from the top down, records grow from the bottom up. This al
 
 At the highest level, there are two fundamentally different approaches to how a storage engine organizes data on disk. Almost every production database you'll encounter uses one of these:
 
+SSTable = Sorted String Table
+
 | Aspect | B-Tree (Update-in-place) | LSM-Tree (Append-only) |
 |---|---|---|
 | Write path | Random write to a specific page | Sequential append to memtable → flush to SSTable |
@@ -114,6 +116,27 @@ The B+ tree is the workhorse index of relational databases. It's a balanced tree
 - Level 1: ~500 pages
 - Level 2: ~250,000 pages  
 - Level 3: ~125M leaf entries
+
+                          ┌───────────────┐
+   Level 0 (root)         │    1 page     │   covers all 100M rows
+   1 page                 └───────┬───────┘
+                                  │  ~500 child pointers
+                  ┌───────────────┼───────────────┐
+                  ▼               ▼               ▼
+   Level 1        ┌────┐        ┌────┐   …      ┌────┐
+   ~500 pages     │page│        │page│          │page│   (500 pages)
+                  └──┬─┘        └──┬─┘          └──┬─┘
+                     │ ~500         │               │
+          ┌──────────┼─────┐       ▼               ▼
+          ▼          ▼     ▼      ...             ...
+   Level 2   ┌────┐┌────┐┌────┐ …               ┌────┐
+   ~250,000  │page││page││page│                 │page│   (500 × 500)
+   pages     └─┬──┘└────┘└────┘                 └────┘
+              │ ~500
+     ┌────────┼────────┐
+     ▼        ▼        ▼
+   Level 3  [ leaf ][ leaf ][ leaf ] … linked → → →   ~125M leaf entries
+   (leaves)   key+ptr  key+ptr  key+ptr        (doubly-linked for range scans)
 
 That's **3 page reads** to find one row out of 100 million. Without the index, you'd need to scan potentially millions of pages.
 
