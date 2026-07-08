@@ -985,4 +985,143 @@ Each adds capability but also risk:
 
 ---
 
-*Prepared for GenAI interview — covers RAG, Vector DBs, Agentic AI, Azure OpenAI, LangGraph, MCP, production best practices, evaluation, security, and your specific experience.*
+# RAG System for 1M Dense Documents — Low Latency, High Accuracy
+
+Here is an end-to-end design covering ingestion, indexing, retrieval, and serving, with the specific tradeoffs that matter when content is **information-dense** and you need **accuracy + low latency**.
+
+## 1. Requirements
+
+**Functional**
+- Ingest ~1M documents with dense (info-rich) content.
+- Answer a query with the most accurate grounded response.
+- Return citations/sources.
+
+**Non-Functional**
+- Low query latency (target p95 < 500ms–1s end-to-end excluding LLM generation; retrieval < 100ms).
+- High retrieval recall + precision.
+- Freshness (incremental updates), scalability, cost control.
+
+**Scale math (why 1M matters)**
+- 1M docs × dense content. Dense docs must be chunked. Avg ~10–50 chunks/doc → **10M–50M chunks/vectors**.
+- At 768-dim float32 = 3KB/vector → 50M × 3KB ≈ **150 GB** raw vectors. This does NOT fit comfortably in RAM per node without quantization/sharding. This drives the index choice.
+
+## 2. High-Level Architecture
+
+```mermaid
+flowchart LR
+    subgraph Ingestion[Offline Ingestion Pipeline]
+        A[Doc Sources] --> B[Parse/Extract]
+        B --> C[Semantic Chunking]
+        C --> D[Enrich: metadata, titles, summaries]
+        D --> E[Embed - dense]
+        D --> F[Sparse index - BM25/SPLADE]
+        E --> G[(Vector DB)]
+        F --> H[(Inverted Index)]
+    end
+
+    subgraph Query[Online Query Path]
+        Q[User Query] --> QR[Query Rewrite/Expand]
+        QR --> HYB[Hybrid Retrieve]
+        G --> HYB
+        H --> HYB
+        HYB --> RR[Rerank - cross-encoder]
+        RR --> CTX[Context Assembly]
+        CTX --> LLM[LLM Generate + Cite]
+        LLM --> ANS[Answer]
+    end
+```
+
+## 3. Ingestion & Indexing (Offline)
+
+### 3.1 Chunking — critical for dense content
+Dense documents lose accuracy with naive fixed-size splitting because a single 512-token chunk may pack many distinct facts.
+- Use **semantic / structure-aware chunking** (split on headings, sections, sentences via a semantic boundary detector) with **200–400 token chunks + 10–20% overlap**.
+- Attach **contextual headers** to each chunk (doc title, section path, a 1-line LLM-generated summary). This "contextual retrieval" technique materially boosts recall on dense text.
+
+- Store rich metadata (source, date, section, entities) for filtering.
+
+### 3.2 Embeddings
+- Use a strong retrieval embedding model (e.g., an E5/BGE/GTE-large class or a hosted embedding API). Higher dimension = better accuracy but more memory/latency → pick based on eval.
+- Run embedding as a **batched, parallel, idempotent** job (Spark/Ray/Kubernetes jobs). Store `content_hash` to skip re-embedding unchanged chunks.
+
+### 3.3 Dual index: dense + sparse (hybrid)
+- **Dense** (semantic): ANN vector index.
+- **Sparse** (lexical): BM25 or learned sparse (SPLADE) — essential for dense docs with exact terms, numbers, codes, acronyms that embeddings blur.
+- Hybrid retrieval consistently beats either alone on accuracy.
+
+### 3.4 Vector index choice (drives latency at 50M scale)
+- **HNSW** for lowest latency at high recall; combine with **quantization**:
+  - **Product Quantization (PQ)** or **Scalar Quantization (int8)** to fit 150GB → ~10–40GB, keeping it in RAM.
+  - Optionally **IVF-PQ** for memory efficiency with shards.
+- **Shard** the index (e.g., 8–16 shards) and query in parallel; **replicate** shards for throughput + HA.
+- Managed options: Milvus, Qdrant, Weaviate, Vespa (Vespa is strong for native hybrid + ranking at scale), or pgvector only for smaller subsets.
+
+## 4. Query Path (Online) — accuracy + low latency
+
+### 4.1 Query understanding
+- **Query rewriting / expansion** (optionally HyDE — generate a hypothetical answer and embed it) to bridge vocabulary gaps.
+- **Metadata filtering** (date, source, permissions) applied as pre-filters to shrink the search space and enforce access control (security requirement).
+
+### 4.2 Retrieve (hybrid, wide then narrow)
+- Retrieve top-K from **both** dense (e.g., K=100) and sparse (K=100).
+- **Fuse** with Reciprocal Rank Fusion (RRF) or weighted score.
+
+### 4.3 Rerank (the accuracy lever)
+- Apply a **cross-encoder reranker** (e.g., BGE-reranker / Cohere Rerank) on the fused top ~100 → keep top **5–8**.
+- Cross-encoders are the single biggest precision boost for dense content, at modest latency (batch on GPU, ~20–50ms for 100 pairs).
+
+### 4.4 Context assembly
+- Deduplicate near-identical chunks, order by relevance, respect token budget.
+- Include chunk metadata/citations. Avoid stuffing — too much context lowers accuracy ("lost in the middle").
+
+### 4.5 Generation
+- LLM generates a grounded answer with **inline citations**; instruct it to answer only from context and say "not found" otherwise (reduces hallucination).
+- Stream tokens to cut perceived latency.
+
+## 5. Latency Budget (illustrative p95)
+
+| Stage | Target |
+|-------|--------|
+| Query rewrite (cache/skip when possible) | 0–30 ms |
+| Hybrid ANN + BM25 (sharded, parallel) | 30–80 ms |
+| Rerank (cross-encoder, GPU batched) | 30–60 ms |
+| Context assembly | 5–10 ms |
+| LLM first token (streamed) | 200–500 ms |
+| **Retrieval subtotal (pre-LLM)** | **< 150 ms** |
+
+## 6. Latency & Accuracy Optimizations
+
+- **Caching**: semantic cache for repeat/similar queries (embedding-similarity keyed); cache embeddings, rerank results.
+- **Two-stage tiering**: cheap wide recall → expensive precise rerank only on the shortlist.
+- **Quantized in-RAM index** + warm shards; avoid disk hits on the hot path.
+- **GPU pooling** for embedding + reranker with dynamic batching.
+- **Adaptive K**: lower K for simple queries, raise for hard ones.
+- **Pre-filtering** by metadata to reduce candidate set.
+
+## 7. Freshness & Updates
+- CDC / event-driven incremental ingestion; upsert by `chunk_id` with `content_hash` dedup.
+- Soft-delete + periodic index compaction/re-build for HNSW graph health.
+- Versioned embeddings so you can A/B a new embedding model without downtime.
+
+## 8. Evaluation & Quality Loop (non-negotiable for "most accurate")
+- Build a **golden eval set** (query → expected passages/answers).
+- Track **retrieval** metrics (Recall@k, MRR, nDCG) and **answer** metrics (faithfulness/groundedness, answer relevance) via a RAG eval harness (e.g., RAGAS-style).
+- Continuous eval in CI when changing chunking, embedding model, or reranker.
+
+## 9. Reliability, Scale, Security
+- Stateless query service behind a load balancer; autoscale on QPS.
+- Replicated shards for HA; graceful degradation (skip rerank under overload).
+- **Access control**: enforce document-level permissions as retrieval filters; never leak unauthorized chunks into context.
+- Observability: trace each stage latency, log retrieval hits for debugging, guard against prompt injection embedded in documents (treat retrieved text as untrusted).
+
+## 10. Key Design Decisions Summary
+
+| Concern | Choice | Why |
+|--------|--------|-----|
+| Dense content chunking | Semantic + contextual headers + overlap | Preserves distinct facts, boosts recall |
+| Retrieval | Hybrid (dense + sparse) + RRF | Semantics + exact terms/numbers |
+| Accuracy | Cross-encoder rerank | Biggest precision gain |
+| 50M vectors latency | HNSW + quantization + sharding | Fits RAM, parallel, high recall |
+| Latency | Caching, tiering, GPU batching, streaming | Meet sub-second target |
+| Correctness | Grounded prompt + citations + eval loop | Reduce hallucination, measurable |
+

@@ -90,6 +90,20 @@
     - [Token Bucket vs Leaky Bucket](#token-bucket-vs-leaky-bucket)
     - [Which Algorithm Should You Choose?](#which-algorithm-should-you-choose)
   - [Backpressure and Load Shedding](#backpressure-and-load-shedding)
+  - [Designing for High Throughput and Low Latency](#designing-for-high-throughput-and-low-latency)
+    - [The Two Axes](#the-two-axes)
+    - [Latency Is the Critical Path](#latency-is-the-critical-path)
+    - [Techniques That Lower Latency](#techniques-that-lower-latency)
+    - [Techniques That Raise Throughput](#techniques-that-raise-throughput)
+    - [Median vs Tail Latency](#median-vs-tail-latency)
+    - [The Throughput-Latency Frontier](#the-throughput-latency-frontier)
+  - [Stream Processing and Stateful Reliability](#stream-processing-and-stateful-reliability)
+    - [Micro-Batch vs True Streaming](#micro-batch-vs-true-streaming)
+    - [How Stream Processors Reach High Throughput](#how-stream-processors-reach-high-throughput)
+    - [Local State for Low Latency](#local-state-for-low-latency)
+    - [Checkpointing and Recovery](#checkpointing-and-recovery)
+    - [Exactly-Once with Replayable Sources](#exactly-once-with-replayable-sources)
+    - [End-to-End Exactly-Once](#end-to-end-exactly-once)
   - [Probabilistic Data Structures](#probabilistic-data-structures)
     - [Bloom Filter](#bloom-filter)
     - [Count-Min Sketch](#count-min-sketch)
@@ -2126,6 +2140,224 @@ Interview mental model:
 
 ---
 
+## Designing for High Throughput and Low Latency
+
+High throughput and low latency are often in tension. Batching more work per operation raises throughput but adds waiting time. Doing tiny units of work lowers latency but wastes per-request overhead. Good design pushes both forward at once by removing coordination, copying less data, and moving work off the request path.
+
+### The Two Axes
+
+Latency and throughput are different measurements.
+
+| Metric | Question it answers | Improved by |
+|---|---|---|
+| Latency | How long does one request take? | Shorter critical path, caching, locality |
+| Throughput | How many requests per second? | Parallelism, batching, sharding |
+
+A system can serve high throughput while still making some users wait too long. The two must be reasoned about separately.
+
+### Latency Is the Critical Path
+
+Latency is the time spent on the critical path of a single request. Every hop on that path adds delay.
+
+```text
+Client -> DNS/CDN -> Load Balancer -> App -> Cache -> Database -> Downstream
+```
+
+For each hop, ask a simple question:
+
+> Can I remove it, cache it, batch it, or parallelize it?
+
+Latency comes from a few recurring sources:
+
+- Network cost such as round trips, TLS handshakes, and cross-region hops.
+- Queueing and contention such as locks, thread pools, and connection pools.
+- Work performed such as serialization, query execution, and computation.
+- Tail amplifiers such as garbage collection pauses and fan-out to many services.
+
+### Techniques That Lower Latency
+
+Low latency means keeping the critical path as short as possible. There are several ways to shorten it.
+
+| Technique | How it lowers latency |
+|---|---|
+| Caching | Avoids repeated reads and recomputation |
+| Locality | Keeps data close, avoiding slow network or disk hops |
+| Async / off-path work | Moves non-essential work out of the request |
+| Parallel fan-out | Runs independent calls at the same time |
+| Efficient memory and CPU | Zero-copy, fewer allocations, less garbage collection |
+| Graceful degradation | Prevents slow failures from stalling the request |
+
+A useful mental model:
+
+> Async does not make work faster. It makes work invisible to the caller by moving it off the critical path.
+
+### Techniques That Raise Throughput
+
+Throughput grows by doing more work in parallel and amortizing overhead.
+
+| Technique | How it raises throughput |
+|---|---|
+| Horizontal scaling | Adds more machines to share load |
+| Partitioning / sharding | Splits data and compute across nodes |
+| Batching | Amortizes fixed per-operation overhead |
+| Pipelining | Overlaps stages instead of waiting serially |
+| Compression | Moves more logical data per byte |
+| Connection pooling and keep-alive | Reuses expensive connections |
+
+Batching is the clearest example of the tension: it raises throughput but adds a small amount of latency while requests wait to be grouped.
+
+### Median vs Tail Latency
+
+The biggest mistake is optimizing only the median. At scale, tail latency defines user experience.
+
+- Async processing and caching mostly improve the typical case, the median (p50).
+- Timeouts, retries, hedged requests, load shedding, and bulkheads mostly protect the tail (p99 and p999).
+
+Tail latency dominates when a request fans out to many services, because the slowest dependency decides the response time.
+
+```text
+Request -> 50 services in parallel -> response waits for the slowest one
+```
+
+Techniques that control the tail:
+
+- Hedged or tied requests that send a duplicate to a second replica after a short delay.
+- Aggressive timeouts with bounded retries and jitter.
+- Load shedding and backpressure so overload fails fast instead of degrading everyone.
+- Isolating noisy neighbors with bulkheads.
+
+### The Throughput-Latency Frontier
+
+Most real systems expose knobs that trade one axis for the other.
+
+| Knob | Toward lower latency | Toward higher throughput |
+|---|---|---|
+| Batch size / buffer timeout | Smaller batches, shorter timeout | Larger batches, longer timeout |
+| Parallelism | Enough to avoid queueing | More workers and partitions |
+| Consistency | Read local or eventual | Fewer coordination round trips |
+| Payload size | Smaller responses | Compression for bulk transfer |
+
+Interview mental model:
+
+> Low latency is the shortest critical path. High throughput is the most parallel work. Async and graceful failure handling are two tools among many, and they target different parts of the latency distribution.
+
+---
+
+## Stream Processing and Stateful Reliability
+
+Stream processors such as Apache Flink are a good case study because they deliberately pursue high throughput and low latency at the same time, while still guaranteeing correctness after failures. The techniques generalize to any stateful system.
+
+### Micro-Batch vs True Streaming
+
+Some systems process events in fixed time-batches. Others process each record as it arrives.
+
+| Model | Latency | Example |
+|---|---|---|
+| Micro-batch | Adds the batch interval to every record | Spark Structured Streaming |
+| True streaming | Record flows through the pipeline immediately | Apache Flink |
+
+True streaming pipelines records one at a time, so a record can traverse the whole operator chain without waiting for a batch boundary. This is the foundation of millisecond latency.
+
+### How Stream Processors Reach High Throughput
+
+Throughput comes from parallelism and from avoiding per-record overhead.
+
+- Parallel dataflow: the job is a graph of operators, each running as many parallel subtasks partitioned by key. Adding parallelism scales throughput close to linearly.
+- Operator chaining: adjacent operators such as map and filter are fused into one task in one thread, avoiding serialization and network hops between them.
+- Network batching: records that must shuffle are grouped into network buffers to amortize network cost. A buffer timeout caps how long a buffer waits, which is the classic throughput versus latency dial.
+- Managed binary memory: state is held in serialized form off-heap, reducing object churn and garbage collection pauses, which keeps latency predictable.
+- Credit-based backpressure: a slow consumer grants fewer buffers to its producer, so the pipeline self-regulates at the maximum sustainable rate instead of collapsing.
+
+### Local State for Low Latency
+
+Stateful operators such as aggregations, joins, and windows keep their state local to the subtask, either in memory or in an embedded store such as RocksDB on local disk.
+
+```text
+Hot path read/write -> LOCAL state (in-memory or RocksDB)   fast, low latency
+```
+
+Local state avoids a remote database call per event, which is what makes stateful stream processing fast. The challenge is that local disk and memory die with the machine, so reliability needs a separate mechanism.
+
+### Checkpointing and Recovery
+
+Local state is made durable by periodically copying it to durable storage such as S3 or HDFS, without slowing the hot path.
+
+```text
+LOCAL state (fast) --async checkpoint (background)--> DURABLE store (survives node loss)
+```
+
+Key properties:
+
+- Asynchronous snapshots: the operator keeps processing while the snapshot uploads in the background, so there is no latency hit on the hot path.
+- Consistent cut: checkpoint barriers flow through the stream (Chandy-Lamport). When an operator sees a barrier, it snapshots its state at that exact stream position, giving a globally consistent snapshot.
+- Incremental checkpoints: with an LSM-based store such as RocksDB, only changed files are uploaded, so even very large state checkpoints cheaply.
+
+Recovery restores the last completed checkpoint and resumes.
+
+```text
+1. Node crashes, local state is gone.
+2. The framework detects failure via heartbeat timeout.
+3. The job restarts from the last successful checkpoint in durable storage.
+4. State is restored and sources rewind to the checkpointed position.
+5. Processing resumes.
+```
+
+An important distinction:
+
+- If the process dies but the machine survives, a local copy of the checkpoint can speed recovery (task-local recovery).
+- If the node itself is gone, local disk is gone too, so recovery must come from durable storage.
+
+Local disk is a performance optimization for recovery, not the durability guarantee.
+
+### Exactly-Once with Replayable Sources
+
+The work done between two checkpoints is not read back from local disk. It is re-derived by replaying the input from a replayable source such as Kafka.
+
+The critical detail is that a checkpoint stores two things atomically:
+
+1. The operator state.
+2. The source offset at the same stream position.
+
+```text
+Checkpoint = { operator state @ position X, source offset @ position X }
+```
+
+On recovery, both are restored together: state is reloaded and the source rewinds to the matching offset. The gap since the checkpoint is reprocessed, giving exactly-once semantics with no double counting and no lost events.
+
+```text
+checkpoint N ......... [crash] .........
+     |                    |
+     | state lost in gap, but input still exists in Kafka
+     v
+restore state@N + rewind offset@N -> reprocess the gap
+```
+
+This is why the source must be replayable. If it cannot rewind, exactly-once breaks.
+
+### End-to-End Exactly-Once
+
+Internal exactly-once is not enough on its own. The sink must also cooperate so replayed output is not written twice.
+
+| Sink strategy | How it stays correct on replay |
+|---|---|
+| Idempotent sink | Upsert by key, so duplicates are harmless |
+| Transactional sink | Two-phase commit, output commits only when the checkpoint commits |
+
+The same pattern appears across stateful systems.
+
+| System | Local (fast) copy | Durability mechanism |
+|---|---|---|
+| Flink | RocksDB or heap state | Async checkpoints plus source offsets |
+| Kafka broker | Local log segments | Replication to follower brokers (ISR) |
+| Redis | In-memory data | AOF or RDB persistence plus replica failover |
+| Relational DB | Buffer pool in RAM | Write-ahead log plus replicas |
+
+Interview mental model:
+
+> Durability for local state comes from a snapshot of state plus a replayable input, restored together. State answers where was I, and the source answers give me the data from there.
+
+---
+
 ## Probabilistic Data Structures
 
 Probabilistic data structures trade a small, bounded error for huge savings in memory and time. They are used when an exact answer is too expensive and an approximate answer is good enough.
@@ -3174,6 +3406,83 @@ Interview mental model:
 ---
 
 ## Distributed Locks and Fencing Tokens
+
+A distributed lock ensures that only one process, across many machines, can access a shared resource or run a critical section at a time. A normal mutex works inside one process because threads share memory. A distributed lock must coordinate across a network where processes share nothing and can fail independently.
+
+Why you need one:
+
+- Prevent two workers from processing the same job, such as double charges or duplicate sends.
+- Serialize access to a shared external resource such as a file, an API, or a database row.
+- Elect a single leader so only one node acts as coordinator.
+
+A usable distributed lock must satisfy three properties:
+
+| Requirement | Meaning |
+|---|---|
+| Mutual exclusion | Only one client holds the lock at a time. |
+| Deadlock-free | The lock is released even if the holder crashes, usually via a TTL. |
+| Fault tolerant | The lock service keeps working when some nodes fail. |
+
+### Using Redis for Distributed Locking
+
+Redis is a common choice because it is in-memory, fast, and has atomic commands with key expiry.
+
+Acquire the lock with a single atomic command. `NX` sets the key only if it does not exist, and `PX` sets an expiry so the lock auto-releases if the holder dies.
+
+```text
+SET lock:resource <unique_token> NX PX 30000
+```
+
+- `NX` gives mutual exclusion because only the first client succeeds.
+- `PX 30000` sets a 30 second TTL so a crashed holder cannot deadlock the resource.
+- `<unique_token>` is a random value, such as a UUID, unique to this client.
+
+Release the lock only if you still own it. A plain read-then-delete is unsafe because the lock may expire and be reacquired between the two steps. Use an atomic check-and-delete with a Lua script.
+
+```text
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+else
+    return 0
+end
+```
+
+Without the token check, a slow client can delete a lock that another client now holds:
+
+```text
+Client A: SET lock token=A NX PX 30s (OK)
+Client A pauses (GC or slow call) longer than 30s
+Redis: lock:resource expires
+Client B: SET lock token=B NX PX 30s (OK)
+Client A: DEL lock without token check -> deletes B's lock
+```
+
+The token comparison stops Client A from releasing Client B's lock.
+
+### The Single-Instance Weakness
+
+A single Redis node is a single point of failure. Redis replication is asynchronous, so if the master fails before a lock replicates and a replica is promoted, two clients can hold the same lock.
+
+Redlock addresses this by using N independent Redis masters, typically five:
+
+1. Record the current time, then try `SET NX PX` on all N nodes with a short per-node timeout.
+2. The lock is acquired only if a majority of nodes accept it and the total time taken is less than the TTL.
+3. The remaining validity time is the TTL minus the elapsed acquisition time.
+4. If acquisition fails, release the lock on all nodes.
+
+Redlock survives a minority of node failures, but it is debated. It relies on bounded clock drift and process pause times, so it is not safe for correctness-critical work without fencing tokens. For efficiency, such as avoiding duplicate work, a simple Redis lock is often good enough.
+
+### Practical Alternatives
+
+| Approach | Fault tolerance | Correctness-safe | Complexity |
+|---|---|---|---|
+| Single Redis `SET NX` | Low, single point of failure | No | Very low |
+| Redlock across N nodes | Medium | Only with fencing tokens | Medium |
+| ZooKeeper or etcd | High, consensus-based | Yes | High |
+
+Use Redis locks for efficiency such as deduplication and avoiding wasted work. Use ZooKeeper, etcd, or a database-backed lock with fencing tokens when correctness is critical.
+
+### Why Locks Alone Are Not Enough
 
 Distributed locks are hard because systems fail in subtle ways.
 
