@@ -545,9 +545,7 @@ Partitions are rare/brief → goal = **strong consistency + HA in the common cas
 
 >  You get both HA and strong consistency in the common case with a consensus-replicated state machine — a majority quorum spread over odd-numbered nodes across AZs, sharded for scale, with automatic failover — accepting that during a real partition only the majority side keeps serving.
 
----
-
-## The catch: reads can still be stale
+### The catch: reads can still be stale
 
 Naively serving a read from "the leader" is **not** automatically linearizable:
 
@@ -561,7 +559,7 @@ Raft fixes this with one of:
 | **Leader leases** | Time-bounded lease; within it the leader knows no other leader exists → can serve reads locally without a round-trip. |
 | **Read through the log** | Treat the read as a log entry that must be committed → strongest, but slowest. |
 
-## Bottom line
+### Bottom line
 
 $$\text{Raft} + \text{leader reads via ReadIndex/lease} = \textbf{linearizable (strong)}$$
 
@@ -847,6 +845,16 @@ That overlap is what guarantees a read can never miss the latest write.
 - **Aerospike**
 > By default writes propagate to replicas asynchronously (eventual consistency), but tuning W + R > N (e.g. QUORUM reads + writes) forces enough replicas to overlap synchronously, giving strong consistency.
 
+> Configuration: The main configuration knobs are the replication factor N, the write quorum W, and the read quorum R. By adjusting W and R, we trade off consistency, latency, and availability. If we need strong quorum-based reads, we configure them so that W + R > N, ensuring every read quorum intersects every completed write quorum. For write-heavy or read-heavy workloads, we can bias the configuration by choosing a smaller W or a smaller R respectively, as long as the required consistency guarantees are met.
+
+| Configuration                     |  N |  W |  R | `W + R > N` |
+| --------------------------------- | -: | -: | -: | :---------: |
+| Highest Availability              |  3 |  1 |  1 |      ❌      |
+| Balanced / Strong Consistency     |  3 |  2 |  2 |      ✅      |
+| **Write-optimized** (Fast Writes) |  3 |  1 |  3 |      ✅      |
+| **Read-optimized** (Fast Reads)   |  3 |  3 |  1 |      ✅      |
+
+
 ### Raft (leader-based consensus)
 - **etcd** (backs Kubernetes)
 - **Consul** (HashiCorp)
@@ -867,3 +875,67 @@ That overlap is what guarantees a read can never miss the latest write.
 - **Cassandra LWT** (`IF NOT EXISTS` lightweight transactions use Paxos)
 
 **Rule:** *Dynamo family = quorum R/W (Cassandra, DynamoDB, Riak); coordination + distributed SQL = Raft (etcd, Consul, CockroachDB); Google stack = Paxos (Spanner, Chubby, ZooKeeper).*
+
+---
+
+## Q. Scaling Writes?
+
+**Scaling writes** in a distributed system is primarily about ensuring that incoming write requests are spread across multiple machines instead of overwhelming a single server. The first step is to choose a storage system that matches the workload—for example, a write-optimized distributed database such as Cassandra for high-ingestion workloads. Data is then horizontally partitioned (sharded) using a partition key so that different records are written to different nodes, allowing write throughput to grow simply by adding more machines to the cluster.
+
+However, partitioning alone is not always sufficient. If a single record or key becomes extremely popular (for example, a viral post receiving millions of likes or an ad receiving millions of impressions), all writes may still be routed to the same partition, creating a **hotspot**. To eliminate this bottleneck, the system can shard the hot key itself by adding a salt or shard identifier, effectively distributing writes for that logical entity across multiple partitions. This ensures that no single node becomes overloaded while maintaining high write throughput.
+
+For very large-scale systems, an additional buffering layer is often introduced. Instead of writing every request directly to the database, writes are first absorbed by a high-throughput cache, message queue, or log (such as Redis or Kafka). Background workers then batch, aggregate, or asynchronously persist these writes to the database. This reduces write amplification, smooths traffic spikes, improves resilience during bursts, and allows the database to process larger, more efficient batches rather than millions of individual write operations.
+
+> **To scale writes in a distributed system, the goal is to avoid concentrating all write traffic on a single node or partition. This is typically achieved by horizontally scaling the storage layer, choosing a write-optimized database when appropriate, partitioning (sharding) data across multiple nodes using a well-designed partition key, and distributing hot keys across multiple shards if they become write hotspots. Systems may also buffer writes using caches or message queues and persist them asynchronously in batches to reduce pressure on the database. Together, these techniques increase write throughput, eliminate bottlenecks, and allow the system to scale horizontally as traffic grows.**
+
+### For SQL databases
+
+The first approach is still to **scale vertically** (more CPU, memory, faster disks). Once that reaches its limit, you **scale horizontally** by partitioning (sharding) the data across multiple database instances. Each shard owns a subset of the data based on a shard key (e.g., `customer_id`, `tenant_id`, or `region`). This distributes writes across multiple SQL servers instead of sending every write to a single database.
+
+However, SQL databases also suffer from **hotspots**. If millions of writes target the same row (e.g., incrementing a "likes" counter), that row becomes a bottleneck due to row locks, index updates, transaction contention, and I/O. The same solution applies—**shard the hot data**. Instead of one counter row, maintain multiple counter rows (or buckets), distribute writes across them, and aggregate them when reading. The concept is identical to salting in NoSQL, although the implementation may use multiple rows or tables rather than partition keys.
+
+For very high write throughput, SQL systems are also commonly combined with **asynchronous architectures**. Applications write to a queue (Kafka, RabbitMQ, etc.) or an in-memory store (Redis), and background workers batch inserts or updates into the SQL database. Batching drastically reduces transaction overhead, improves throughput, and smooths traffic spikes. This is especially useful for analytics events, logs, clickstreams, and counters where slight delays are acceptable.
+
+### Interview summary
+
+A good way to answer is:
+
+> "The core principles of write scaling are the same for both SQL and NoSQL: distribute writes across multiple machines, avoid hotspots, and buffer or batch writes when possible. The difference is that NoSQL databases often provide built-in horizontal partitioning and are optimized for high write throughput, whereas SQL databases require explicit sharding strategies and must also account for transactions, row locking, and stronger consistency guarantees."
+
+---
+
+## Q. How do you scale writes while maintaining low latency?
+
+> I would horizontally partition writes across multiple nodes using a well-chosen shard key to distribute load and reduce contention. For hot keys, I'd shard the key itself to eliminate hotspots. If the workload allows, I'd buffer writes through a cache or message queue and persist them asynchronously in batches. These techniques keep write latency low by preventing any single node from becoming overloaded. The trade-offs include increased operational complexity, more expensive cross-shard operations, and, when using asynchronous pipelines, eventual consistency instead of immediate durability.
+
+---
+
+## Q. Scaling Reads with Eventual and Strong Consistency
+
+### **1. Scaling Reads with Eventual Consistency (Most Common)**
+
+> Use **read replicas** and **distributed caches (Redis/CDN)** to distribute read traffic and reduce latency. Writes go to the primary, while reads are served from replicas or cache, providing excellent scalability at the cost of **possible stale reads due to replication lag or cache inconsistency**.
+
+### **2. Scaling Reads with Strong Consistency**
+
+> Serve reads from the **primary** or use **strongly consistent distributed databases** that rely on **synchronous replication, quorum reads/writes (`W + R > N`), or consensus protocols like Raft/Paxos**. This guarantees the latest committed data on every read but increases **read/write latency and coordination overhead**, reducing overall throughput compared to eventual consistency.
+
+---
+
+## Q. Caching Patterns
+
+| Pattern                        | Explanation                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cache-Aside (Lazy Loading)** | Application checks the cache first. On a cache miss, it reads from the database, stores the result in the cache, and returns it. Most commonly used.                            |
+| **Read-Through**               | Application always reads from the cache. On a cache miss, the cache itself fetches the data from the database, stores it, and returns it.                                       |
+| **Write-Through**              | Application writes to the cache, and the cache synchronously writes the data to the database. Cache and DB stay consistent, but writes are slower.                              |
+| **Write-Behind (Write-Back)**  | Application writes only to the cache. The cache asynchronously flushes changes to the database later. Faster writes, but risk of data loss if the cache fails before flushing.  |
+| **Write-Around**               | Application writes directly to the database and skips the cache. The cache is populated only when the data is read later, avoiding cache pollution from rarely accessed writes. |
+
+Easy way to remember:
+
+Cache-Aside → App manages the cache.
+Read-Through → Cache manages reads.
+Write-Through → Cache writes to DB immediately.
+Write-Behind → Cache writes to DB later.
+Write-Around → Writes bypass the cache.

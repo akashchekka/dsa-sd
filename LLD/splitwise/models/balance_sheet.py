@@ -1,14 +1,6 @@
 from __future__ import annotations
 
-
 class BalanceSheet:
-    """Owns the net-balance ledger.
-
-    Positive balance = the user is owed money.
-    Negative balance = the user owes money.
-    Sum across all users is always 0.
-    """
-
     def __init__(self) -> None:
         self._net: dict[str, float] = {}
 
@@ -38,4 +30,4 @@ class BalanceSheet:
         self._net[payer_id] -= amount
 
     def snapshot(self) -> dict[str, float]:
-        return dict(self._net)
+        return dict(self._net) # Shallow copy. So that caller can't mutate the state.

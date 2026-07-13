@@ -11,9 +11,7 @@ from models.group                 import Group
 from models.user                  import User
 from services.expense_validator   import ExpenseValidator
 
-
 GLOBAL_GROUP_ID = "__global__"
-
 
 class SplitwiseService:
     def __init__(self, simplify_strategy: SimplifyStrategy) -> None:

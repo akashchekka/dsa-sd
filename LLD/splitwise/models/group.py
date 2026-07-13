@@ -5,14 +5,7 @@ import threading
 from models.balance_sheet import BalanceSheet
 from models.expense       import Expense
 
-
 class Group:
-    """A named collection of users that share expenses.
-
-    Each group owns its own ledger and expense history — settlements are
-    computed per-group, never across groups.
-    """
-
     def __init__(self, group_id: str, name: str) -> None:
         self.group_id      = group_id
         self.name          = name
@@ -40,7 +33,6 @@ class Group:
         return expense.expense_id
 
     def remove_expense(self, expense_id: str) -> Expense:
-        """Hard-delete an expense and reverse its effect on the balance sheet."""
         with self._lock:
             idx = next(
                 (i for i, e in enumerate(self.expenses) if e.expense_id == expense_id),

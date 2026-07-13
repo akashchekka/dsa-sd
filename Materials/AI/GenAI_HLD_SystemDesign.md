@@ -428,6 +428,92 @@ Input → Input guardrails (PII, injection, topic/policy classifier)
 
 ### Deep dive — Guardrail flow (layered defense on both sides of the model)
 
+---
+
+## 16. Design a Semantic Cache for LLM Responses
+
+> *A cost + latency lever that sits in front of the model. Instead of matching queries by exact string, it matches by **meaning** — so "What's your refund policy?" and "How do I get my money back?" hit the same cached answer.*
+
+**Why it matters:** LLM calls are the most expensive and slowest hop in the stack. In production, a large fraction of traffic is semantically repetitive (FAQs, popular prompts). A cache hit turns a ~800 ms, $0.01 LLM call into a ~20 ms, near-free vector lookup. This is the single highest-ROI optimization for read-heavy GenAI apps.
+
+**Clarifying questions to ask:**
+- What's the hit-rate potential — FAQ-style traffic (high) or long-tail unique prompts (low)?
+- How stale can an answer be? (Pricing/inventory = seconds; general knowledge = days.)
+- Is the answer a pure function of the prompt, or does it depend on **per-user context / RAG documents / tools**? (Determines the cache key.)
+- What's the cost of a **wrong** cache hit (returning a semantically-close but incorrect answer)? This sets your similarity threshold.
+- Multi-tenant? Then cache must be namespaced per tenant to avoid cross-tenant leakage.
+
+**Assumed requirements:** 1000 QPS, target ≥40% hit rate, p95 < 50 ms on hits, per-tenant isolation, configurable TTL, tunable similarity threshold.
+
+**High-level architecture:**
+
+```
+Query → Embed query → Vector similarity search (cache index)
+      │
+      ├── HIT  (top-1 score ≥ threshold) → validate (TTL, ACL, tenant) → return cached answer
+      │
+      └── MISS (no candidate ≥ threshold) → LLM → store {embedding, answer, metadata}
+                                                 → return answer
+
+Eviction: TTL expiry + LRU/LFU on capacity
+Invalidation: on source-data change, purge affected entries
+```
+
+### Deep dive — Request flow (how a query becomes a hit or a miss)
+
+1. **Normalize.** Lowercase, trim, strip volatile tokens (timestamps, IDs). This raises the hit rate before you even embed.
+2. **Embed the query.** Run the incoming prompt through the same embedding model used to index the cache (e.g. 1536-dim vector). The embedding **is** the cache key — semantics, not the raw string.
+3. **Similarity search.** Query the vector index (ANN, e.g. HNSW) for the top-1 (or top-k) nearest cached entries by cosine similarity.
+4. **Threshold decision.** If `top1_score ≥ threshold` (e.g. cosine ≥ 0.92) → **candidate hit**; else → **miss**. The threshold is the core knob: too low → wrong answers served; too high → low hit rate. Tune it against a labeled set of paraphrase pairs.
+5. **Validate the hit.** A candidate isn't served blindly. Check:
+   - **TTL** — is the entry still fresh?
+   - **Tenant / ACL** — does this entry belong to the requesting tenant and is the user allowed to see it?
+   - **Context match** — if the answer depended on user context or RAG doc versions, confirm those still match (store a context hash in metadata).
+   Passing all → return cached answer, record a hit.
+6. **On miss.** Call the LLM, get the answer, then **write back**: store `{query_embedding, response, tenant_id, context_hash, created_at, ttl, hit_count}`. Return the fresh answer.
+7. **Async hit-quality sampling.** A small % of hits are re-scored (LLM-as-judge or by actually calling the model and comparing) to detect the threshold drifting into "wrong answer" territory.
+
+### Data structures — what powers each operation
+
+| Concern | Structure | Why |
+|---|---|---|
+| **Semantic lookup** | **Vector index (HNSW / IVF-PQ ANN)** in a vector DB (Redis-VSS, Milvus, pgvector, FAISS) | O(log n)-ish approximate nearest-neighbor by cosine; the heart of "match by meaning". |
+| **Entry storage / metadata** | **Hash map** `cache_id → {response, tenant, context_hash, created_at, ttl, freq}` (Redis hash / KV) | O(1) fetch of the full record once ANN returns the id. |
+| **TTL expiry** | **Min-heap / priority queue** keyed by `expire_at`, or the store's native TTL | Efficiently evict the soonest-to-expire; native TTL avoids a background sweeper. |
+| **Capacity eviction (LRU)** | **Doubly-linked list + hash map** (classic O(1) LRU) | Evict least-recently-used when at capacity; move-to-front on hit. |
+| **Capacity eviction (LFU)** | **Frequency buckets / min-heap on `hit_count`** | Keep the *popular* FAQ answers, drop one-off long-tail queries. |
+| **Invalidation by source** | **Inverted index** `doc_id → [cache_ids]` | When a source doc changes, purge exactly the cache entries derived from it. |
+| **Exact-match fast path** | **Hash of normalized prompt → cache_id** | Skip the embedding + ANN cost entirely when the prompt is byte-identical. |
+
+A production cache is a **two-layer lookup**: an exact-match hash map (cheap, catches identical repeats) in front of the vector index (semantic, catches paraphrases).
+
+### Eviction & invalidation
+
+- **TTL** — every entry expires; short for volatile domains, long for stable knowledge.
+- **LRU/LFU** — bound memory; LFU is usually better here because cache value follows a power-law (a few FAQs dominate).
+- **Explicit invalidation** — on a source-data or prompt-template change, purge affected entries via the inverted index. Stale cache = silently wrong answers, so invalidation correctness matters more than hit rate.
+
+### Correctness guardrails (the dangerous part)
+
+The risk unique to semantic caching: **a near-neighbor is not always the same question.** "How do I *cancel* my subscription?" vs "How do I *change* my subscription?" can sit above a loose threshold yet need different answers. Mitigations:
+- Conservative threshold + offline calibration on paraphrase/near-miss pairs (measure hit precision, not just rate).
+- Never cache answers that depend on **fast-changing or user-specific state** unless the key includes that state (context hash, user id).
+- Sample hits for quality; auto-lower the threshold or purge on detected regressions.
+
+### Scaling & multi-tenancy
+
+- **Namespace per tenant** (separate index or a mandatory `tenant_id` filter) — prevents cross-tenant answer leakage and keeps each tenant's neighbors relevant.
+- **Sharded vector index** by tenant/hash for horizontal scale; replicas for read throughput.
+- **Distributed KV (Redis cluster)** for the metadata + exact-match layer.
+
+### Tradeoffs
+
+- **Hit rate vs correctness** — the similarity threshold trades one directly against the other; there's no free lunch. Pick based on the cost of a wrong answer.
+- **Freshness vs cost savings** — aggressive TTL = fewer stale answers but a lower hit rate.
+- **Extra embedding call on every request** — you pay one embedding (~10–30 ms, cheap) to potentially save one LLM call (~800 ms, expensive); net win whenever hit rate is non-trivial.
+- **Memory footprint** — storing embeddings + responses costs RAM; bound it with LFU eviction and int8-quantized vectors.
+- **Best fit:** FAQ/support bots, popular-prompt workloads. **Poor fit:** highly personalized, real-time, or long-tail-unique traffic where hit rates stay low.
+
 1. **Cheap-first input checks.** Run fast, deterministic filters before spending model tokens: regex/allow-lists for obvious cases, a **PII detector** (redact card/SSN), and a **prompt-injection/jailbreak classifier**. Untrusted content (retrieved docs, tool output) is wrapped in delimiters and demoted below system instructions (**instruction hierarchy**) so it can't override rules.
 2. **Parallel expensive checks.** Heavier LLM-based policy/topic classification runs **in parallel** with the cheap checks (not serially) to protect latency; only escalate to it when the cheap filters are uncertain.
 3. **Decision.** Based on severity, the system chooses an action: allow, **block** (refuse), **redact** (mask PII), **rewrite** (soften), or **route to human**. Thresholds are configurable per use case.

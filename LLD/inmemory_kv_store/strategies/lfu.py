@@ -41,4 +41,4 @@ class LFU:
         if not self.freq_map[freq]:
             del self.freq_map[freq]
             if self.min_freq == freq:
-                self.min_freq = min(self.freq_map, 0)
+                self.min_freq = min(self.freq_map, default = 0)

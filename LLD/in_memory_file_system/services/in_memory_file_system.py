@@ -14,7 +14,6 @@ class InMemoryFileSystem:
         self.root = Directory("/")
 
     def _traverse(self, path: str) -> Directory:
-        """Resolve a directory path; auto-create missing intermediate dirs."""
         if path == "/":
             return self.root
 
@@ -24,10 +23,9 @@ class InMemoryFileSystem:
         for part in parts:
             if part not in curr.children:
                 curr.children[part] = Directory(part)
-            node = curr.children[part]
-            if not node.is_dir():
+            if not curr.children[part].is_dir():
                 raise ValueError(f"{part} is a file, not a directory.")
-            curr = node  # type: ignore[assignment]
+            curr = curr.children[part]
         return curr
 
     def mkdir(self, path: str) -> None:
@@ -47,7 +45,7 @@ class InMemoryFileSystem:
         if file_node.is_dir():
             raise ValueError(f"{file_name} is a directory.")
 
-        file_node.write(content)  # type: ignore[attr-defined]
+        file_node.write(content)
 
     def ls(self, path: str) -> List[str]:
         if path == "/":
@@ -55,7 +53,9 @@ class InMemoryFileSystem:
         else:
             curr = self.root
             for part in path.strip("/").split("/"):
-                curr = curr.children[part]  # type: ignore[assignment]
+                if not curr.is_dir() or part not in curr.children:
+                    raise ValueError("No such path exists")
+                curr = curr.children[part]
 
         if not curr.is_dir():
             return [curr.name]

@@ -11,6 +11,7 @@ Fast recall of the core ideas covered below. Skim this, dive into a section when
 - **Sharding:** size each shard to a few million vectors so its index fits in RAM, scatter-gather across shards in parallel, replicate ×2–3 for HA and QPS.
 - **Quantization:** **int8** ≈ 4× smaller at ~99% recall (start here); **PQ / IVF-PQ** ≈ 16–32× for extreme scale, paired with full-vector reranking to recover precision.
 - **Tuning dials:** HNSW `efSearch` and IVF `nprobe` are the runtime recall-vs-latency knobs — turn up for recall, down for speed.
+- **Maximal Marginal Relevance(MMR):** MMR is a retrieval strategy that balances relevance to the query with diversity among retrieved documents. It prevents redundant chunks from occupying the LLM's context window, resulting in richer context and better RAG responses.
 
 | Topic | One-liner |
 |---|---|

@@ -530,6 +530,13 @@ def sensitive_node(state):
 | **Presence penalty** | Penalize tokens that appeared at all | Stay on topic | Explore new topics |
 | **Max tokens** | Output length limit | Short responses | Long responses |
 
+- 🌡️ Temperature = How adventurous should the model be?
+- 🔝 Top-K = Consider only the best K choices.
+- 🎯 Top-P = Consider enough choices to cover P% of the probability.
+- 🔁 Frequency Penalty = Don't keep repeating the same word.
+- 🆕 Presence Penalty = Try introducing new words or ideas.
+- ✅ Greedy = Always pick the most likely word.
+
 **Best practice:** For factual/RAG tasks: temperature=0-0.3. For creative tasks: temperature=0.7-1.0. Don't combine temperature and top-p aggressively.
 
 ### Q26: What is Context Engineering?
