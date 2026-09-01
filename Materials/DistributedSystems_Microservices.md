@@ -209,24 +209,115 @@ Examples:
 
 Tail latency is high-percentile latency.
 
-| Metric | Meaning |
-|---|---|
-| p50 | 50% of requests are faster than this. Median latency. |
-| p95 | 95% of requests are faster than this. |
-| p99 | 99% of requests are faster than this. |
-| p999 | 99.9% of requests are faster than this. |
+| Metric | Meaning                                               |
+|--------|-------------------------------------------------------|
+| p50    | 50% of requests are faster than this. Median latency. |
+| p95    | 95% of requests are faster than this.                 |
+| p99    | 99% of requests are faster than this.                 |
+| p999   | 99.9% of requests are faster than this.               |
 
-Tail latency matters because user-facing flows often call many services. If one request fans out to 20 services, the probability of hitting one slow dependency becomes high.
+Saying a request landed "inside p99" means it completed at or faster than the p99 threshold. By definition, a single request has a 99% chance of landing inside p99 and a 1% chance of falling into the slow tail.
 
-### Example
+Tail latency matters because user-facing flows often call many services. A scatter-gather request finishes only when the slowest dependency replies, so each backend's tail becomes the caller's typical case.
 
-If each dependency has 99% chance of being fast, and a request calls 20 dependencies:
+### Why Fan-Out Amplifies the Tail
 
+If a request fans out to N servers and must wait for all of them, it is fast only when every server is fast. Assuming independent latencies, the probabilities multiply:
+
+```text
+P(request inside p99) = P(one server inside p99)^N = 0.99^N
 ```
-Probability all are fast = 0.99^20 = 0.817
+
+| Fan-out | All inside p99 | At least one straggler | All inside p99.9 |
+|--------:|---------------:|-----------------------:|-----------------:|
+| 1       | 99.0%          | 1.0%                   | 99.9%            |
+| 5       | 95.1%          | 4.9%                   | 99.5%            |
+| 10      | 90.4%          | 9.6%                   | 99.0%            |
+| 20      | 81.7%          | 18.3%                  | 98.0%            |
+| 50      | 60.5%          | 39.5%                  | 95.1%            |
+| 100     | 36.6%          | 63.4%                  | 90.5%            |
+| 200     | 13.4%          | 86.6%                  | 81.9%            |
+| 500     | 0.7%           | 99.3%                  | 60.6%            |
+
+At a fan-out of 20, about 18% of requests hit a straggler. At a fan-out of 100, nearly two-thirds do. A one-in-a-hundred event stops being rare and becomes the majority outcome.
+
+### The Per-Server Percentile Requirement
+
+Now invert the question. A scatter-gather request finishes only when the slowest of the N servers replies, so the request is within L only if every server is within L.
+
+Let L be the latency target and let p be the probability that a single server responds within L:
+
+```text
+P(request <= L) = P(every server <= L) = P(server <= L)^N = p^N
 ```
 
-So about 18% of requests may experience at least one slow dependency.
+The service must meet its p99 target at L, so set that expression equal to 0.99 and solve for the per-server probability:
+
+```text
+p^N = 0.99
+p   = 0.99^(1/N)
+```
+
+| Fan-out | Required per-server probability | Per-server percentile |
+|--------:|--------------------------------:|----------------------:|
+| 1       | 0.990000                        | p99                   |
+| 10      | 0.998900                        | p99.90                |
+| 20      | 0.999498                        | p99.95                |
+| 100     | 0.999900                        | p99.99                |
+| 1000    | 0.999990                        | p99.999               |
+
+Read the last column backwards. A required probability of 0.9999 describes the latency each server beats 99.99% of the time, which is exactly the definition of its p99.99. The value L appears in two statements at once: it is the service p99, and it is the backend p99.99.
+
+So with a fan-out of 100, your service p99 is governed by each backend's p99.99, not its p99.
+
+### The Tail Budget Splits N Ways
+
+A useful approximation makes the intuition concrete:
+
+```text
+1 - 0.99^(1/N) is about 0.01 / N
+```
+
+You hold a 1% budget for being slow. Any one of the N servers can spend it, so the budget divides N ways.
+
+| Fan-out | Slow budget per server |
+|--------:|-----------------------:|
+| 1       | 1%                     |
+| 10      | 0.1%                   |
+| 100     | 0.01%                  |
+| 1000    | 0.001%                 |
+
+Percentiles do not average across a fan-out. They multiply, and the budget splits.
+
+### What This Costs in Practice
+
+Take a backend whose latency is exponentially distributed with a 10 ms mean:
+
+| Percentile | Latency |
+|------------|--------:|
+| p50        | 6.9 ms  |
+| p95        | 30 ms   |
+| p99        | 46 ms   |
+| p99.9      | 69 ms   |
+| p99.99     | 92 ms   |
+| p99.999    | 115 ms  |
+
+A single-server system has a p99 of 46 ms. Fan out to 100 identical servers and the service p99 becomes 92 ms, the backend p99.99.
+
+Nothing got slower. No server changed. The p99 doubled purely from the width of the fan-out.
+
+This is why optimizing the median is close to worthless in a scatter-gather system. You are being graded four nines out on each backend's curve, and the mean server is never the problem.
+
+### Why the Independence Assumption Breaks
+
+The `0.99^N` model assumes each server is slow independently. Real stragglers correlate:
+
+- A garbage collection pause, CPU throttle, or noisy neighbor hits many replicas on the same host or rack.
+- All N backends share an overloaded database, config service, or auth dependency.
+- Load imbalance from a hot shard or a bad hash key concentrates work.
+- Network events such as incast collapse or a congested top-of-rack switch hit a whole group.
+
+Correlation means fewer independent bad draws but far worse simultaneous ones. Treat the calculation as a clean model of the mechanism and a floor on how often stragglers appear, not as a forecast.
 
 ### Causes of Tail Latency
 
@@ -253,6 +344,25 @@ So about 18% of requests may experience at least one slow dependency.
 - Async processing
 - Reduce fanout
 - Use p95/p99 metrics, not averages
+
+Two further options accept a partial answer instead of waiting for the maximum:
+
+- Return after 95 of 100 replies arrive, which is what large search systems do.
+- Micro-partition the data so many small shards per machine let slow ones be migrated away.
+
+### Choosing a Hedge Delay
+
+Hedging sends a duplicate request to a second replica when the first is slow, then takes whichever answer returns first. The delay before firing the backup is the whole design decision.
+
+Setting the delay at the backend p95 is the standard starting point, because by definition only about 5% of requests are slower than their own p95. That caps the extra load at roughly 5% while removing most of the tail. Hedging at the median would double your traffic.
+
+| Hedge delay | Requests that fire a backup | Extra load |
+|-------------|----------------------------:|-----------:|
+| p50         | 50%                         | About 50%  |
+| p95         | 5%                          | About 5%   |
+| p99         | 1%                          | About 1%   |
+
+Hedging is cheap precisely because it only pays for requests that were already going to be slow. Derive the delay from a rolling window of observed latency rather than hardcoding it, and enforce a global hedge budget so a cluster-wide slowdown cannot make every request hedge at once. See [Hedged Requests](#hedged-requests) for the failure modes.
 
 ---
 
@@ -1320,16 +1430,27 @@ Examples:
 
 ### Hedged Requests
 
-Send a duplicate request to another replica if the first is slow.
+Send a duplicate request to another replica if the first is slow, and use whichever response arrives first.
 
 Pros:
 
-- Reduces tail latency.
+- Reduces tail latency, which dominates fan-out systems. See [Choosing a Hedge Delay](#choosing-a-hedge-delay) for how the delay is derived.
 
 Cons:
 
 - Increases load.
 - Must be safe for idempotent reads or carefully controlled.
+
+Failure modes to guard against:
+
+| Risk | Why it matters |
+|------|----------------|
+| Non-idempotent work | The backup may also execute, so never hedge a write without an idempotency key. |
+| Correlated slowness | If the whole cluster is degraded, every request hedges and amplifies an existing overload. |
+| No hedge budget | Without a global cap such as 5% of requests, a bad deploy turns into a self-inflicted traffic surge. |
+| Unhealthy replicas | Hedging onto a replica the circuit breaker already opened wastes the backup. |
+
+A stronger variant is the tied request, which goes to two replicas immediately with a mutual cancellation message so whichever one dequeues first cancels its twin. That reduces queueing delay rather than only execution delay, but it needs server-side cooperation.
 
 ---
 

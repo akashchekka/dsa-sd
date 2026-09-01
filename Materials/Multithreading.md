@@ -1,3 +1,7 @@
+---
+description: Interview preparation guide for Python multithreading, synchronization, debugging, and concurrent system design
+---
+
 # Multithreading & Concurrency in Python — FAANG Interview Guide
 
 > **Goal:** Understand concurrency from scratch, then solve machine coding / LLD rounds at Uber, Google, Meta, Amazon, etc. All examples in Python.
@@ -13,6 +17,10 @@
     - [Key Terms (Just 4 to Start)](#key-terms-just-4-to-start)
   - [2. Threads, Processes \& the GIL](#2-threads-processes--the-gil)
     - [Thread vs Process](#thread-vs-process)
+    - [Shared and Private Thread State](#what-threads-share-and-keep-private)
+    - [Thread Lifecycle and Switch Costs](#thread-lifecycle-and-context-switching)
+    - [Runtime and OS Thread Models](#user-threads-vs-kernel-threads)
+    - [Scheduling and Workload Selection](#scheduling-and-workload-type)
     - [Python's GIL (Global Interpreter Lock)](#pythons-gil-global-interpreter-lock)
   - [3. Creating Threads](#3-creating-threads)
     - [Basic Thread Creation](#basic-thread-creation)
@@ -23,8 +31,13 @@
     - [Why Does This Happen?](#why-does-this-happen)
     - [Types of Race Conditions](#types-of-race-conditions)
     - [Fix: Use a Lock](#fix-use-a-lock)
+    - [Data Race vs Race Condition](#data-race-vs-race-condition)
+    - [Atomicity, Visibility, and Ordering](#atomicity-visibility-and-ordering)
+    - [Happens-Before](#happens-before)
+    - [Python Interview Rules for Shared State](#python-interview-rules-for-shared-state)
   - [5. Locks (Mutex)](#5-locks-mutex)
     - [Basic Usage](#basic-usage)
+    - [Ownership and Lock Granularity](#lock-ownership-and-granularity)
     - [Bank Account Example](#bank-account-example)
     - [Rules for Using Locks](#rules-for-using-locks)
   - [6. RLock (Reentrant Lock)](#6-rlock-reentrant-lock)
@@ -53,14 +66,35 @@
     - [Fix: Timeout](#fix-timeout)
     - [Livelock](#livelock)
     - [Starvation](#starvation)
+    - [Priority Inversion](#priority-inversion)
+    - [Deadlock Prevention Checklist](#deadlock-prevention-checklist)
     - [Summary](#summary)
   - [13. Thread Pool (concurrent.futures)](#13-thread-pool-concurrentfutures)
     - [map() — Simpler API](#map--simpler-api)
     - [ProcessPoolExecutor — For CPU-Bound Work](#processpoolexecutor--for-cpu-bound-work)
     - [When to Use What](#when-to-use-what)
+    - [Sizing a Thread Pool](#sizing-a-thread-pool)
+    - [Backpressure and Queue Capacity](#backpressure-and-queue-capacity)
+    - [Thread Pool Failure Modes](#thread-pool-failure-modes)
+    - [Shutdown and Exception Handling](#shutdown-and-exception-handling)
   - [14. async/await (asyncio)](#14-asyncawait-asyncio)
     - [async vs threading — When to Use](#async-vs-threading--when-to-use)
     - [asyncio Synchronization (same concepts!)](#asyncio-synchronization-same-concepts)
+  - [Production Concurrency Debugging](#concurrency-debugging)
+    - [Diagnostic Symptom Map](#symptom-to-cause-map)
+    - [Nine-Step Debugging Workflow](#systematic-debugging-workflow)
+    - [Deadlock Wait-For Graphs](#wait-for-graphs)
+    - [Python Thread Stack Capture](#capturing-python-thread-stacks)
+    - [Deterministic Timing Reproduction](#making-timing-bugs-reproducible)
+    - [Concurrent Correctness Tests](#testing-concurrent-code)
+  - [Senior-Level Concurrency Topics](#advanced-concurrency-topics)
+    - [CAS and Lock-Free Algorithms](#compare-and-swap-and-lock-free-algorithms)
+    - [ABA Hazard](#the-aba-problem)
+    - [Spinlock Trade-Offs](#spinlocks)
+    - [Memory Ordering and Fences](#memory-ordering-and-fences)
+    - [False Sharing](#false-sharing)
+    - [Lock Striping and Sharding](#lock-striping-and-sharding)
+    - [Work-Stealing Schedulers](#work-stealing)
   - [15. Common Patterns Cheat Sheet](#15-common-patterns-cheat-sheet)
   - [16. Machine Coding Problems](#16-machine-coding-problems)
     - [16.1 Producer-Consumer (Bounded Buffer)](#161-producer-consumer-bounded-buffer)
@@ -114,9 +148,9 @@ You can have:
 - **Both** — A web server using a thread pool on a multi-core machine. Multiple requests handled by multiple threads running on separate cores.
 
 In Python specifically:
-- **Threads** give you concurrency but NOT parallelism for CPU work (because of the GIL). They DO give parallelism for I/O work (GIL is released during I/O).
-- **Processes** (`multiprocessing`) give you both concurrency AND parallelism (each process has its own GIL).
-- **asyncio** gives you concurrency on a single thread — no parallelism at all.
+* **Threads** provide concurrency. Traditional CPython usually does not run pure Python bytecode in parallel, but I/O and native code that releases the GIL can overlap, and free-threaded builds change this constraint
+* **Processes** (`multiprocessing`) can provide CPU parallelism because each process has an independent interpreter
+* **asyncio** normally provides cooperative concurrency on one event-loop thread; CPU work must be offloaded to execute in parallel
 
 ### Key Terms (Just 4 to Start)
 
@@ -142,11 +176,85 @@ In Python specifically:
 | **Memory** | Separate (isolated) | Shared (same memory) |
 | **Cost** | Heavy (~MB of memory) | Light (~KB of memory) |
 | **Communication** | Hard (pipes, queues) | Easy (shared variables) |
-| **Crash impact** | Only that process dies | Whole program can crash |
+| **Failure isolation** | Stronger; another process can survive | Weaker; shared state can be corrupted, and native faults can terminate the process |
+
+An uncaught Python exception normally terminates only the affected thread and is reported through `threading.excepthook`. The process can continue in a partially completed state, which is why thread-task failures still need explicit reporting and recovery.
+
+### What Threads Share and Keep Private
+
+Threads in one process execute in the same address space. That makes communication cheap, but it also creates shared-state hazards.
+
+| Shared by Threads | Private to Each Thread |
+|-------------------|------------------------|
+| Heap objects | Call stack and local stack frames |
+| Module globals and class variables | CPU registers and program counter |
+| Open files and sockets | Thread-local storage |
+| Process code and loaded libraries | Scheduling state and thread ID |
+
+A local variable is private only while the object remains confined to that thread. If a local variable points to a shared mutable object, the object is still shared.
+
+```python
+shared = []
+
+def worker():
+    local_alias = shared  # The reference is local; the list is shared.
+    local_alias.append("item")
+```
+
+**Interview test:** Identify the shared mutable state first. Then define the invariant that synchronization must preserve.
+
+### Thread Lifecycle and Context Switching
+
+A simplified thread lifecycle is:
+
+```text
+NEW -> READY -> RUNNING -> BLOCKED/WAITING -> READY -> TERMINATED
+```
+
+* A ready thread can run but is waiting for CPU time
+* A running thread currently has a CPU
+* A blocked thread waits for I/O, a lock, a condition, or another resource
+* A terminated thread has completed and cannot be restarted
+
+A **context switch** saves one thread's execution state and restores another's. It enables concurrency, but it costs CPU time and can disrupt caches and branch predictors. Too many runnable threads can reduce throughput because the system spends more time scheduling and moving state than doing useful work.
+
+Thread creation and destruction also have costs: stack allocation, runtime bookkeeping, and operating-system scheduling. This is why services generally reuse workers through pools instead of creating one thread per small task.
+
+### User Threads vs Kernel Threads
+
+* Kernel threads are known and scheduled by the operating system
+* User-level threads are scheduled by a runtime in user space
+* Many runtimes map user tasks onto a smaller or equal number of kernel threads
+
+Python `threading.Thread` uses native operating-system threads in standard CPython. An `asyncio` task is different: it is a user-space coroutine scheduled cooperatively by an event loop, usually on one kernel thread.
+
+The interview distinction is who controls scheduling. Kernel threads can be preempted by the OS. Coroutines normally yield at explicit suspension points such as `await`.
+
+### Scheduling and Workload Type
+
+Modern operating systems normally use **preemptive scheduling**. A running thread can lose the CPU when its time slice expires, a higher-priority thread becomes runnable, or the thread blocks.
+
+Important terms:
+
+* Time slice or quantum: approximate interval before the scheduler may preempt a thread
+* Oversubscription: more runnable threads than available CPU cores
+* Fairness: whether runnable threads receive a reasonable opportunity to execute
+* Affinity: restricting a thread to particular CPU cores
+* Starvation: a runnable thread repeatedly fails to obtain CPU or a resource
+
+Workload type influences design:
+
+| Workload | Behavior | Typical Python Choice |
+|----------|----------|-----------------------|
+| CPU-bound | Spends most time computing | Processes, native code, or free-threaded execution when supported |
+| I/O-bound | Frequently waits on network, disk, or database I/O | Threads or `asyncio` |
+| Mixed | Alternates computation and blocking | Measure, isolate CPU work, and bound both queues and concurrency |
+
+Thread count is not a correctness property. It is a performance and capacity decision that should be validated with measurements.
 
 ### Python's GIL (Global Interpreter Lock)
 
-Python has a unique limitation: the **GIL** (Global Interpreter Lock). It ensures only one thread runs Python bytecode at a time, even on a multi-core machine.
+Traditional CPython builds use a **GIL** (Global Interpreter Lock). It normally permits only one thread at a time to execute Python bytecode in a process, even on a multi-core machine.
 
 ```
 Without GIL (Java, C++):
@@ -158,12 +266,14 @@ With GIL (Python):
   Core 1: Thread B ░░░░████░░░░████░░░░  ← Interleaved, not parallel
 ```
 
-**Does this mean threads are useless in Python?** NO!
+**Does this mean threads are useless in Python?** No.
 
-- **I/O-bound work** (network calls, file reads, database queries): Threads work great! The GIL is released during I/O waits, so other threads can run.
-- **CPU-bound work** (math, image processing): Use `multiprocessing` instead — each process has its own GIL.
+* **I/O-bound work** (network calls, file reads, database queries): Threads remain useful because blocking I/O generally releases the GIL
+* **CPU-bound Python work** (math, transformations): Processes are a common choice because each process has an independent interpreter
+* **Native extensions**: Some libraries release the GIL while running native code and can execute work in parallel
+* **Free-threaded CPython builds**: Newer CPython versions can be built without the GIL, but extension compatibility, overhead, and deployment support must be considered
 
-**For interviews:** The GIL doesn't affect thread synchronization problems. Locks, semaphores, and condition variables work exactly the same way. The GIL just means you won't get CPU speedup from threads — but that's NOT what interview problems test.
+**For interviews:** Never use the GIL as a substitute for synchronization. Code must protect multi-step invariants with locks or higher-level thread-safe abstractions. A correct explanation is that the GIL often limits CPU-bound bytecode parallelism on traditional CPython, while threads remain useful for I/O and operations that release the GIL.
 
 ```python
 # I/O-bound → use threads (GIL is released during I/O)
@@ -267,8 +377,10 @@ t2.start()
 t1.join()
 t2.join()
 
-print(counter)  # Expected: 2,000,000. Actual: ~1,500,000 (random!)
+print(counter)  # Required logical result: 2,000,000, but no lock protects it.
 ```
+
+Some CPython versions and schedules may happen to print the expected value. That does not make the operation a documented synchronization mechanism. Use a controlled interleaving, shown later in the debugging section, when demonstrating the lost update deterministically.
 
 ### Why Does This Happen?
 
@@ -323,6 +435,80 @@ t2.join()
 print(counter)  # Always 2,000,000 ✓
 ```
 
+### Data Race vs Race Condition
+
+The terms overlap but are not identical:
+
+* A **data race** occurs when threads access the same memory concurrently, at least one access is a write, and no required synchronization orders those accesses
+* A **race condition** is any correctness bug whose outcome depends on timing or event order
+
+A check-then-act race can occur even when each individual operation is thread-safe:
+
+```python
+if key not in cache:       # Atomicity of this lookup is not enough.
+    cache[key] = compute() # Another thread may insert between the steps.
+```
+
+Protect the complete invariant, not individual lines. The critical operation is "insert exactly once if absent," so the check and update must be coordinated as one logical action.
+
+### Atomicity, Visibility, and Ordering
+
+Correct concurrent code must reason about three separate properties:
+
+| Property | Question |
+|----------|----------|
+| Atomicity | Can another thread observe or interfere with a partially completed operation? |
+| Visibility | When one thread writes data, what ensures another thread sees it? |
+| Ordering | What prevents reads and writes from being observed in an unsafe order? |
+
+One source line does not imply one atomic operation. Atomic operations also do not automatically make a multi-step business invariant atomic.
+
+```python
+# The invariant is balance_a + balance_b == constant.
+balance_a -= amount
+balance_b += amount
+```
+
+Even if each assignment were atomic, another thread could observe the state between them. A lock around the entire transfer protects the invariant.
+
+### Happens-Before
+
+**Happens-before** is a reasoning relationship. If action A happens-before action B, B must observe the effects that the memory model guarantees from A. It is about guaranteed ordering, not wall-clock timestamps.
+
+Common synchronization edges include:
+
+* Actions before releasing a lock are ordered before actions after another thread acquires the same lock
+* Writes performed before `Event.set()` are intended to be observed by a thread after `Event.wait()` succeeds
+* A thread's actions occur before another thread successfully returns from `join()` on it
+* Enqueuing and dequeuing through a thread-safe queue coordinate publication of the item
+
+```python
+payload = None
+ready = threading.Event()
+
+def producer():
+    global payload
+    payload = build_payload()
+    ready.set()               # Publish readiness after initialization.
+
+def consumer():
+    ready.wait()
+    use(payload)              # Reads only after the synchronization point.
+```
+
+Without a synchronization edge, reasoning that "the writer probably ran first" is insufficient.
+
+### Python Interview Rules for Shared State
+
+* Do not depend on accidental atomicity of a CPython implementation detail
+* Do not treat the GIL as a memory-visibility or invariant-protection mechanism
+* Use `Lock` for shared invariants and `Queue` for ownership transfer
+* Publish initialized data through a lock, event, condition, queue, future, or thread lifecycle operation
+* Keep the synchronization policy inside the class that owns the mutable state
+* Document whether methods are thread-safe and whether callbacks execute under a lock
+
+The safest interview statement is: "I will make synchronization explicit so the design remains correct across interpreter versions and implementations."
+
 ---
 
 ## 5. Locks (Mutex)
@@ -367,6 +553,22 @@ if lock.acquire(timeout=5.0):
 else:
     print("Timed out waiting for lock")
 ```
+
+### Lock Ownership and Granularity
+
+Many languages distinguish an owner-tracking mutex from a semaphore. In Python, `threading.Lock` does not track ownership: any thread may release a locked lock, although releasing an unlocked lock raises `RuntimeError`. `threading.RLock` does track ownership and must be released by the thread that acquired it.
+
+Even when the runtime permits cross-thread release, prefer structured ownership through `with`. It makes control flow reviewable and prevents accidental over-release.
+
+Lock granularity is a throughput-versus-complexity trade-off:
+
+| Strategy | Advantages | Costs |
+|----------|------------|-------|
+| Coarse-grained lock | Simple invariants, easier correctness proof | More contention, unrelated work blocks |
+| Fine-grained locks | More independent operations can proceed | More lock bookkeeping and deadlock risk |
+| Lock striping | Bounded number of locks with parallel key access | Hash collisions and complex multi-key operations |
+
+Start with one coarse lock for correctness. Split it only after measurement identifies contention, and define a total acquisition order before introducing multiple locks.
 
 ### Bank Account Example
 
@@ -604,7 +806,7 @@ sem.release()  # ValueError: Semaphore released too many times
 |---|---|---|
 | Max threads inside | 1 | N |
 | Use case | Mutual exclusion | Connection pools, rate limiting |
-| Who can release? | Only the holder | Any thread |
+| Who can release in Python? | Any thread, although structured same-thread release is preferred | Any thread |
 
 ---
 
@@ -863,15 +1065,38 @@ def fixed_thread(my_lock, other_lock, name):
 
 One thread never gets the lock because other threads keep grabbing it first.
 
-**Fix:** Use fair locks (FIFO ordering) or `queue.Queue` which is inherently fair.
+Mitigations include reducing lock hold time, partitioning shared state, limiting aggressive retries, or using a primitive with an explicit fairness guarantee. Python's basic locks do not promise strict FIFO acquisition, and `queue.Queue` should not be described as a general fair-lock replacement.
+
+### Priority Inversion
+
+Priority inversion occurs when a high-priority thread needs a lock held by a low-priority thread, while medium-priority work keeps preempting the low-priority owner.
+
+```text
+Low priority:    owns Lock A, needs CPU to release it
+High priority:   waits for Lock A
+Medium priority: keeps running and delays the low-priority owner
+```
+
+The effective result is inverted: medium-priority work delays high-priority work. Operating systems can mitigate this through **priority inheritance**, temporarily raising the lock owner's priority. Application-level mitigations include short critical sections, avoiding blocking I/O while holding a lock, and reducing priority-sensitive lock sharing.
+
+### Deadlock Prevention Checklist
+
+* Define a total lock order and acquire nested locks only in that order
+* Keep critical sections small and never call slow external systems while holding a lock
+* Avoid invoking unknown callbacks while holding a lock because they may re-enter the component
+* Avoid nested locks when state can be partitioned or ownership can be transferred through a queue
+* Use timeouts for recovery and diagnostics, not as proof that the algorithm is deadlock-free
+* Release partially acquired resources before retrying, preferably with bounded randomized backoff
+* Include shutdown paths in lock-order analysis
 
 ### Summary
 
-| Problem | Threads Running? | Progress? | Fix |
-|---------|-----------------|-----------|-----|
-| **Deadlock** | No (blocked) | None | Lock ordering, timeout |
-| **Livelock** | Yes (spinning) | None | Random backoff |
-| **Starvation** | Some are | Some, not all | Fair scheduling, queues |
+| Problem | Threads Running? | Progress? | Typical Mitigation |
+|---------|------------------|-----------|--------------------|
+| **Deadlock** | No, affected threads are blocked | None | Lock ordering, fewer nested locks |
+| **Livelock** | Yes | None | Randomized or bounded backoff |
+| **Starvation** | Some are | Some threads make no progress | Fairness policy, partitioning, bounded retries |
+| **Priority inversion** | Some are | High-priority work is delayed | Priority inheritance, short critical sections |
 
 ---
 
@@ -936,6 +1161,73 @@ with ProcessPoolExecutor(max_workers=4) as executor:
 | I/O-bound (network, disk) | `ThreadPoolExecutor` | GIL released during I/O |
 | CPU-bound (computation) | `ProcessPoolExecutor` | Separate GIL per process |
 | High-concurrency I/O | `asyncio` | Even lighter than threads |
+
+### Sizing a Thread Pool
+
+There is no universal worker-count formula.
+
+* CPU-bound work usually starts near the number of available cores to avoid oversubscription
+* I/O-bound work may benefit from more workers because many workers are blocked at any moment
+* Downstream limits such as database connections, API quotas, memory, and file descriptors often matter more than CPU count
+
+A useful starting estimate for a stable I/O-heavy workload is:
+
+$$
+N_{threads} \approx N_{cores}\left(1 + \frac{W}{S}\right)
+$$
+
+Here, $W$ is average wait time and $S$ is average service or compute time. Treat this as a hypothesis. Measure throughput, queue delay, tail latency, memory, context switches, and downstream saturation before selecting a production value.
+
+### Backpressure and Queue Capacity
+
+A fixed number of workers does not protect a system if producers can create tasks faster than workers complete them. An unbounded task queue converts overload into growing latency and memory usage.
+
+Common overload policies are:
+
+* Block the producer until capacity is available
+* Reject immediately or after a timeout
+* Drop work that is stale or low priority
+* Run the task in the caller to slow the producer
+* Shed load before an already saturated dependency
+
+Python's `ThreadPoolExecutor` does not expose a simple bounded submission queue. For strict backpressure, place a bounded `queue.Queue` in front of workers, guard submissions with a semaphore, or build a small executor with an explicit capacity policy.
+
+### Thread Pool Failure Modes
+
+| Failure Mode | Typical Cause | Prevention |
+|--------------|---------------|------------|
+| Pool exhaustion | Every worker blocks indefinitely | Timeouts, cancellation, isolate blocking dependencies |
+| Nested-submit deadlock | A worker submits to the same pool and waits while all workers do the same | Avoid synchronous child waits or use separate execution resources |
+| Queue growth | Arrival rate exceeds service rate | Bounded queue and explicit rejection policy |
+| Starvation | Long tasks occupy workers needed by short or high-priority tasks | Separate pools or priority-aware scheduling |
+| Retry storm | Failures trigger immediate synchronized retries | Exponential backoff, jitter, retry budget |
+| Hidden task failure | Caller never inspects a failed `Future` | Consume results and report exceptions |
+
+Classic one-worker deadlock:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+pool = ThreadPoolExecutor(max_workers=1)
+
+def outer():
+    inner_future = pool.submit(lambda: 42)
+    return inner_future.result()  # The only worker waits for queued inner work.
+
+pool.submit(outer).result()
+```
+
+### Shutdown and Exception Handling
+
+Decide these lifecycle semantics during design:
+
+* Whether shutdown drains queued tasks or cancels tasks that have not started
+* Whether submissions after shutdown fail immediately
+* How running tasks receive cooperative cancellation
+* Whether shutdown has a timeout and what happens when workers do not stop
+* Where task exceptions are stored, logged, retried, or returned
+
+`Future.result()` re-raises the task exception in the caller. If results are ignored, failures can remain unnoticed. A worker should catch task failures at its execution boundary so one bad task does not silently terminate custom worker logic.
 
 ---
 
@@ -1006,6 +1298,226 @@ async def limited_access():
 ```
 
 **Interview Tip:** If asked about async, explain the event loop: "One thread processes tasks cooperatively. When a task hits `await` (I/O wait), it yields control so other tasks can run. No locking needed for the same coroutine."
+
+---
+
+## Concurrency Debugging
+
+Concurrency bugs are often intermittent because logging, breakpoints, CPU load, and thread count change the schedule. Debug the wait relationships and state invariants rather than adding arbitrary sleeps.
+
+### Symptom-to-Cause Map
+
+| Symptom | Likely Causes | First Evidence to Collect |
+|---------|---------------|---------------------------|
+| Application hangs, CPU low | Deadlock, missed signal, blocking I/O | Thread stacks, lock waits, dependency latency |
+| CPU near 100%, little progress | Busy wait, livelock, retry loop | CPU profile, repeated stacks, retry metrics |
+| Tail latency rises under load | Lock contention, queueing, downstream saturation | Queue depth, lock wait time, p95/p99 latency |
+| Thread count keeps growing | Thread leak, unbounded thread-per-request design | Thread count by name and creation stacks |
+| Queue grows continuously | Producers outpace consumers | Arrival rate, service rate, oldest-task age |
+| Workers idle but tasks stall | Lost notification, dependency cycle, scheduling bug | Queue state, conditions, task dependency graph |
+| Occasional wrong result | Race condition, unsafe publication | Failed invariant, operation history, shared writes |
+| Throughput falls as threads increase | Contention, context switching, false sharing | Context switches, CPU profile, lock contention |
+| Memory grows with load | Unbounded queue, retained futures, task leak | Heap profile, queue size, pending task count |
+
+### Systematic Debugging Workflow
+
+1. Establish whether the failure is incorrect state, no progress, or poor performance.
+2. Record CPU, memory, thread count, queue depth, throughput, error rate, and latency percentiles.
+3. Capture multiple thread dumps several seconds apart. Repeated identical blocked stacks are more useful than one snapshot.
+4. Identify each thread's state: running, waiting for a lock or condition, blocked on I/O, or idle on a work queue.
+5. Map resource ownership and waiting relationships. Search for cycles and resources with many waiters.
+6. Find the code path that acquired the resource and verify every release path, including exceptions and shutdown.
+7. Reproduce with controlled synchronization, not long sleeps.
+8. Fix the invariant or coordination protocol. Adding more locks without a policy often creates another failure.
+9. Verify with stress, timeout, cancellation, failure-injection, and shutdown tests.
+
+For contention, distinguish **lock hold time** from **lock wait time**. A tiny critical section can still become a bottleneck if every operation requires the same lock.
+
+### Wait-For Graphs
+
+A wait-for graph turns a hang into a cycle-detection problem.
+
+```text
+Thread T1 -> waits for Lock B -> owned by Thread T2
+Thread T2 -> waits for Lock A -> owned by Thread T1
+
+T1 -> T2 -> T1  means deadlock
+```
+
+Construct it from thread stacks, lock instrumentation, and runtime diagnostics:
+
+1. For each blocked thread, record the resource it waits for.
+2. For each resource, record its current owner.
+3. Replace `thread -> resource -> owner` with `thread -> owner`.
+4. Find directed cycles.
+
+No cycle does not mean the system is healthy. A thread may be blocked forever on I/O, a notification that was lost, or a resource whose owner has failed.
+
+### Capturing Python Thread Stacks
+
+Python can dump all current thread stacks with `faulthandler`:
+
+```python
+import faulthandler
+import sys
+
+faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+```
+
+For a process that occasionally hangs, enable periodic dumps during diagnosis:
+
+```python
+import faulthandler
+
+faulthandler.dump_traceback_later(30, repeat=True)
+```
+
+Cancel periodic dumping after the diagnostic window with `faulthandler.cancel_dump_traceback_later()`. Stack dumps show where threads are executing or waiting, but basic Python locks do not always expose ownership. Add thread names, queue metrics, task IDs, and narrowly scoped lock-wait instrumentation when ownership is unclear.
+
+External profilers and operating-system debuggers can help when threads are blocked inside native extensions or system calls. Prefer sampling tools for a live incident because attaching a debugger can alter timing.
+
+### Making Timing Bugs Reproducible
+
+Use `Barrier`, `Event`, or test hooks to force the dangerous interleaving:
+
+```python
+import threading
+
+both_read = threading.Barrier(2)
+counter = 0
+
+def unsafe_increment():
+    global counter
+    observed = counter
+    both_read.wait()  # Both threads capture the same old value.
+    counter = observed + 1
+```
+
+This test deterministically demonstrates a lost update. Arbitrary `sleep()` calls only increase probability and can produce slow, flaky tests.
+
+Other useful techniques include:
+
+* Run the test many times with recorded random seeds
+* Vary worker counts, queue capacities, and task durations
+* Inject exceptions, timeouts, cancellations, and partial shutdowns
+* Pause execution at lock boundaries through explicit test hooks
+* Log monotonic timestamps, thread names, operation IDs, and state transitions
+
+### Testing Concurrent Code
+
+Test properties, not one expected schedule:
+
+* Safety: forbidden states never occur
+* Liveness: submitted work eventually completes or fails within a defined timeout
+* Conservation: produced items equal consumed plus intentionally rejected items
+* At-most-once or exactly-once semantics: match the stated contract
+* Capacity: queue size and active-resource count never exceed limits
+* Shutdown: blocked producers and consumers wake and terminate predictably
+
+Always use time-bounded joins in tests so a deadlock becomes a failure instead of hanging the test suite:
+
+```python
+thread.join(timeout=2)
+assert not thread.is_alive(), "worker failed to terminate"
+```
+
+Linearizability is a strong correctness model for concurrent objects: each completed operation should appear to take effect at one instant between its invocation and response. In interviews, identify the **linearization point**, such as the append performed while holding the queue lock.
+
+---
+
+## Advanced Concurrency Topics
+
+These topics are most useful for senior interviews and deep follow-ups. Explain the trade-off before proposing a low-level mechanism.
+
+### Compare-And-Swap and Lock-Free Algorithms
+
+**Compare-and-swap (CAS)** atomically performs this operation:
+
+```text
+if memory == expected:
+    memory = desired
+    return success
+return failure
+```
+
+An optimistic update loop reads a value, computes a replacement, and retries if another thread changed the value first. CAS is the foundation of many atomic counters, lock-free stacks, and concurrent queues.
+
+Terms interviewers may ask about:
+
+* Lock-free: system-wide progress is guaranteed, although one thread may starve
+* Wait-free: every operation completes in a bounded number of its own steps
+* Obstruction-free: a thread completes if it eventually runs alone
+
+Lock-free does not mean race-free or automatically faster. Algorithms still need correct memory ordering, safe memory reclamation, retry control, and protection from ABA. Under contention, repeated CAS failures can waste CPU.
+
+Python's standard `threading` API does not provide a general CAS primitive for arbitrary Python objects. Use locks and thread-safe queues in normal Python code unless a specialized library or native extension provides well-defined atomics.
+
+### The ABA Problem
+
+CAS may see the expected value and assume nothing changed, even though the value changed from A to B and back to A.
+
+```text
+Thread 1 reads head = A
+Thread 2 changes A -> B -> A
+Thread 1 CAS(A, C) succeeds, but the structure changed in between
+```
+
+Common defenses pair the value with a version counter, use tagged pointers, or use a safe memory-reclamation scheme such as hazard pointers or epochs. The interview insight is that equality of the current value does not prove absence of intervening changes.
+
+### Spinlocks
+
+A spinlock repeatedly checks for availability instead of sleeping:
+
+```text
+while not try_acquire(lock):
+    continue
+```
+
+Spinning can be useful only when the expected hold time is extremely short, a CPU core is available, and blocking plus waking would cost more. It performs badly under contention, on a single core, when the owner is descheduled, or when the critical section blocks.
+
+Do not implement spinlocks in ordinary Python interview code. The interpreter, GIL on traditional builds, and scheduler make a blocking `Lock` or higher-level primitive a better default.
+
+### Memory Ordering and Fences
+
+Compilers and CPUs may reorder independent operations for performance, and cores may observe writes at different times. Memory-ordering modes describe which reorderings an atomic operation permits:
+
+* Relaxed: atomicity without cross-variable ordering
+* Acquire: later operations do not move before the acquire
+* Release: earlier operations do not move after the release
+* Sequentially consistent: operations behave as if participating in one global order
+
+A memory fence restricts reordering and visibility. In high-level Python, use synchronization primitives instead of hand-written fences. At senior level, explain that mutual exclusion and visibility are separate concerns, while a correctly implemented lock provides both the exclusion and ordering required around its critical section.
+
+### False Sharing
+
+False sharing occurs when threads update different variables that occupy the same CPU cache line. The variables are logically independent, but cache-coherence traffic repeatedly moves or invalidates the shared line.
+
+```text
+Cache line: [counter_for_thread_1 | counter_for_thread_2]
+Core 1 writes left field <-> Core 2 writes right field
+```
+
+Symptoms include reduced throughput as threads increase, despite little logical lock contention. Mitigations include padding or aligning hot per-thread fields, batching updates, and using local counters followed by aggregation. It is most visible in native code, shared-memory arrays, or free-threaded parallel execution rather than ordinary GIL-bound Python bytecode.
+
+### Lock Striping and Sharding
+
+Lock striping maps different keys to different locks:
+
+```python
+stripe = hash(key) % len(locks)
+with locks[stripe]:
+    update(key)
+```
+
+It improves throughput when accesses are spread across stripes. Trade-offs include more complex multi-key operations, possible hot stripes, approximate rather than global LRU semantics, and deadlock risk when an operation needs several stripes. Acquire multiple stripes in a globally consistent index order.
+
+### Work Stealing
+
+In a work-stealing scheduler, each worker owns a local deque. A worker normally consumes its own tasks; an idle worker steals tasks from another worker's deque.
+
+Benefits include reduced contention on one global queue, improved cache locality, and dynamic load balancing for irregular task trees. Costs include more complex termination detection, synchronization among deques, and less predictable execution order.
+
+Work stealing is especially useful for recursive fork-join workloads. A simple service handling independent requests often benefits more from a bounded central queue and clear backpressure.
 
 ---
 
@@ -2263,8 +2775,8 @@ What kind of work?
 
 | Question | Answer |
 |----------|--------|
-| What is the GIL? | Python lock allowing only one thread to run bytecode at a time |
-| Threads useful despite GIL? | Yes — GIL released during I/O |
+| What is the GIL? | Traditional CPython mechanism that normally permits one thread at a time to execute Python bytecode |
+| Threads useful despite GIL? | Yes; blocking I/O and many native operations release it, and free-threaded builds are also available |
 | Lock vs RLock? | RLock lets same thread acquire multiple times; Lock deadlocks |
 | Why `while` not `if` with `wait()`? | Spurious wakeups — thread can wake without notify |
 | `notify()` vs `notify_all()`? | `notify()` wakes one, `notify_all()` wakes all |
@@ -2274,6 +2786,12 @@ What kind of work?
 | `queue.Queue` vs `deque`? | Queue = thread-safe blocking. deque = fast, single-thread/DSA |
 | Thread vs Process? | Thread shares memory (fast, risky). Process isolated (slow, safe) |
 | When to use asyncio? | High-concurrency I/O (thousands of connections, one thread) |
+| What is happens-before? | A synchronization-backed guarantee that one action's effects are ordered before another action |
+| Atomic operation vs thread-safe operation? | Atomicity covers one indivisible step; thread safety preserves the complete shared-state contract |
+| CPU low but requests stuck? | Inspect repeated thread stacks for deadlock, missed signaling, pool exhaustion, or blocked I/O |
+| Why can a thread pool deadlock? | Workers can synchronously wait for tasks queued behind them in the same exhausted pool |
+| What is priority inversion? | High-priority work waits for a resource held by low-priority work that is delayed by medium-priority work |
+| What is the ABA problem? | CAS sees A again and misses that the value changed from A to B and back to A |
 
 ### Machine Coding Round Tips
 

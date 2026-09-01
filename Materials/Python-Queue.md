@@ -19,8 +19,9 @@
 8. [Backpressure: block vs. fail-fast](#8-backpressure-block-vs-fail-fast)
 9. [Threads vs. asyncio: preemptive vs. cooperative](#9-threads-vs-asyncio-preemptive-vs-cooperative)
 10. [`await` vs. `block=True`](#10-await-vs-blocktrue)
-11. [Node.js event loop: same goal, different machinery](#11-nodejs-event-loop-same-goal-different-machinery)
-12. [One-page summary](#12-one-page-summary)
+11. [Production queues and `asyncio.to_thread()`](#11-production-queues-and-asyncioto_thread)
+12. [Node.js event loop: same goal, different machinery](#12-nodejs-event-loop-same-goal-different-machinery)
+13. [One-page summary](#13-one-page-summary)
 
 ---
 
@@ -428,7 +429,183 @@ coroutine and yields to the loop instead of blocking a thread."*
 
 ---
 
-## 11. Node.js event loop: same goal, different machinery
+## 11. Production queues and `asyncio.to_thread()`
+
+Blocking queues are widely used in production for **in-process producer/consumer
+communication**: thread-pool work queues, log buffering, background jobs,
+database-write batching, and multistage pipelines.
+
+### Threaded producer/consumer with `queue.Queue`
+
+`queue.Queue` is thread-safe. Its blocking methods park the calling OS thread:
+`get()` waits when empty, while `put()` waits when a bounded queue is full.
+
+```python
+import queue
+import threading
+
+STOP = object()
+work_queue: queue.Queue[object] = queue.Queue(maxsize=100)
+
+
+def worker() -> None:
+    while True:
+        item = work_queue.get()
+        try:
+            if item is STOP:
+                return
+            process(item)
+        finally:
+            work_queue.task_done()
+
+
+workers = [threading.Thread(target=worker) for _ in range(4)]
+for thread in workers:
+    thread.start()
+
+for job in get_jobs():
+    work_queue.put(job)  # Blocks the producer if 100 jobs are already queued
+
+for _ in workers:
+    work_queue.put(STOP)
+
+work_queue.join()
+for thread in workers:
+    thread.join()
+```
+
+One stop marker is required per worker. Calling `task_done()` in `finally`
+ensures `join()` is released even if processing fails or the marker is received.
+In a real service, also define retry, logging, cancellation, and poison-job
+handling.
+
+### Why `queue.Queue` blocks an event loop
+
+`queue.Queue` does not know about asyncio. A blocking method blocks **whichever
+thread calls it**. If an async function calls `get()` on an empty synchronous
+queue, it parks the event-loop thread:
+
+```python
+import asyncio
+import queue
+
+work_queue: queue.Queue[str] = queue.Queue()
+
+
+async def consume_badly() -> None:
+    item = work_queue.get()  # Blocks the entire event-loop thread
+    print(item)
+
+
+asyncio.run(consume_badly())
+```
+
+While that `get()` waits, the loop cannot run other coroutines, timers, or
+network callbacks. The same issue applies to a blocking `put()` or `join()`.
+
+```text
+queue.Queue.get()
+        ↓
+parks the event-loop thread
+        ↓
+all coroutines on that loop stop progressing
+```
+
+### Native async code uses `asyncio.Queue`
+
+When both producers and consumers are coroutines, use `asyncio.Queue`:
+
+```python
+import asyncio
+
+
+async def consumer(work_queue: asyncio.Queue[str]) -> None:
+    item = await work_queue.get()
+    try:
+        await process_async(item)
+    finally:
+        work_queue.task_done()
+```
+
+If the queue is empty, `await work_queue.get()` suspends only this coroutine and
+returns control to the event loop. Other tasks continue running. Unlike
+`queue.Queue`, `asyncio.Queue` is designed for coroutines and is not thread-safe.
+
+### Highlight: bridge synchronous code with `asyncio.to_thread()`
+
+Sometimes an async application must call an existing **synchronous, blocking**
+API, such as `queue.Queue.get()`, a legacy SDK, or blocking file code. Do not call
+it directly on the event-loop thread. Use `asyncio.to_thread()`:
+
+```python
+import asyncio
+import queue
+
+work_queue: queue.Queue[str] = queue.Queue()
+
+
+async def consumer() -> None:
+    item = await asyncio.to_thread(work_queue.get)
+    try:
+        print(item)
+    finally:
+        work_queue.task_done()
+```
+
+The execution flow is:
+
+```text
+async function
+     ↓ await asyncio.to_thread(blocking_function, arguments...)
+thread-pool worker runs and blocks on the synchronous function
+     ↓ event-loop thread remains free
+other coroutines continue running
+     ↓ synchronous function completes
+awaiting coroutine resumes with the result
+```
+
+> [!IMPORTANT]
+> `asyncio.to_thread()` does not make synchronous code non-blocking. It moves
+> the blocking call to a thread-pool worker so the **event-loop thread** remains
+> responsive.
+
+Arguments are passed after the function rather than by calling the function
+first:
+
+```python
+# Correct: get() runs later in a worker thread.
+item = await asyncio.to_thread(work_queue.get, True, 2.0)
+
+# Wrong: get() runs immediately and blocks before to_thread() is called.
+item = await asyncio.to_thread(work_queue.get())
+```
+
+`to_thread()` is primarily appropriate for blocking I/O. In conventional
+CPython, moving CPU-heavy pure-Python work to a thread does not bypass the GIL;
+use a process pool for CPU parallelism.
+
+### Which queue should you use?
+
+| Boundary | Python option | Persistence |
+|---|---|---|
+| Between threads | `queue.Queue` | In-memory |
+| Between coroutines | `asyncio.Queue` | In-memory |
+| Between local processes | `multiprocessing.Queue` | In-memory / IPC |
+| Blocking library inside async code | `asyncio.to_thread()` | Depends on library |
+| Between services or machines | Kafka, RabbitMQ, SQS, etc. | Durable when configured |
+
+Production in-memory queues should normally be bounded, cancellation-aware,
+observable, and drainable during shutdown. If queued work must survive a process
+or machine crash, use a durable external broker instead.
+
+> **One-liner:** *"`queue.Queue` safely coordinates threads but blocks the calling
+thread; `asyncio.Queue` suspends a coroutine, and `asyncio.to_thread()` safely
+offloads unavoidable synchronous blocking calls so they do not freeze the event
+loop."*
+
+---
+
+## 12. Node.js event loop: same goal, different machinery
 
 The **spirit** matches asyncio (don't block while waiting), but do not equate it
 with Python threads.
@@ -480,7 +657,7 @@ for blocking I/O."*
 
 ---
 
-## 12. One-page summary
+## 13. One-page summary
 
 | Concept | The crisp truth |
 |---|---|
@@ -496,5 +673,7 @@ for blocking I/O."*
 | Backpressure | Bounded queue + `block=True` (wait) or `block=False` (fail fast) |
 | Threads vs asyncio | Preemptive (interrupt anywhere, need locks) vs cooperative (switch only at `await`) |
 | `await` vs `block=True` | Same "wait until ready" semantics; suspends a coroutine vs parks a thread |
+| `queue.Queue` in async code | Its blocking methods park the event-loop thread when called directly |
+| `asyncio.to_thread()` | Runs blocking synchronous code in a worker thread so the event loop stays responsive |
 | Node.js | Cooperative single-thread loop (like asyncio); libuv thread pool does blocking I/O |
 | CPU-bound work | Threads won't help under the GIL — use `multiprocessing` or native code |

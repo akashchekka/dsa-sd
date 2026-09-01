@@ -5,8 +5,6 @@
 - [Q: All that I need to know about Kafka](#q-all-that-i-need-to-know-about-kafka)
 - [Q: What if Kafka fails?](#q-what-if-kafka-fails)
 - [Q: How do consumers replay events using offsets to recover missed notifications?](#q-how-do-consumers-replay-events-using-offsets-to-recover-missed-notifications)
-- [Q: What if Redis fails?](#q-what-if-redis-fails)
-- [Q: Trade-offs with Redis?](#q-trade-offs-with-redis)
 - [Q: Load Balancing](#q-load-balancing)
 - [Q: How to achieve High Availability and High Consistency in distributed systems? (FAANG)](#q-how-to-achieve-high-availability-and-high-consistency-in-distributed-systems-faang)
 - [Q: Redundancy & failover (active-active vs active-passive, health checks, leader election)?](#q-redundancy--failover-active-active-vs-active-passive-health-checks-leader-election)
@@ -122,63 +120,6 @@ Kafka **keeps messages** (not deleted on read); permanent **offset** lets consum
 **Rule:** Replay = **seek to offset** + **idempotent dedupe**.
 
 >  Because Kafka retains messages independently of consumption, recovery is just rewinding to an older offset and reprocessing; the only requirement is idempotent dedupe so replayed events don't produce duplicate side effects.
-
----
-
-## Q: What if Redis fails?
-
-### 1. Single node crash (in-memory data lost)
-- **RDB:** periodic snapshots → fast restart, loses writes since last snapshot.
-- **AOF:** logs every write → less loss (`appendfsync everysec` ≈ 1s), slower.
-- Best = **AOF + RDB**. Pure in-memory = full loss on restart (fine for a cache).
-
-### 2. High availability (auto-failover)
-- **Sentinel:** monitors master + replicas, auto-promotes a replica (needs **quorum**).
-- **Redis Cluster:** sharded; each shard has master + replicas with built-in failover.
-- Replication is **async** → a few writes lost during failover.
-
-### 3. App-side resilience (Redis unreachable)
-- **Cache-aside fallback:** on miss/error read source **DB** → degrade, don't crash.
-- **Timeouts + circuit breaker:** fail fast instead of hanging.
-- **Cache stampede:** mass loss floods DB → request coalescing, jittered TTLs, warm-up.
-
-### 4. Consistency risk
-- Async replication → promoted replica may miss last writes. `min-replicas-to-write` rejects writes if too few replicas in sync (consistency over availability).
-
-| Failure | Mitigation |
-|---|---|
-| Node crash, data lost | AOF + RDB persistence |
-| Master down | Sentinel / Cluster auto-failover |
-| Redis unreachable | Cache-aside fallback to DB, timeouts, circuit breaker |
-| Mass cache loss | Request coalescing, jittered TTLs, warm-up |
-
-**Rule:** If Redis is a **cache** → fall back to the **DB** gracefully. If a **datastore** → use **Sentinel/Cluster + AOF** for HA/durability, accept a tiny async-replication loss window.
-
->  Redis failures span lost in-memory data (softened by AOF+RDB), write loss on async failover (Sentinel/Cluster), and unreachability; treat it as a cache that gracefully falls back to the DB, and only lean on it as a datastore when you accept a small replication-loss window.
-
----
-
-## Q: Trade-offs with Redis?
-
-- **Memory (RAM-bound):** all in RAM → expensive, size-limited; large data needs sharding/eviction.
-- **Durability vs performance:** in-memory fast but loses data on crash; AOF/RDB add I/O latency; AOF `everysec` loses ~1s.
-- **Consistency vs availability:** async replication → failover can **lose recent writes**; forcing sync (`min-replicas-to-write`) cuts availability.
-- **Single-threaded core:** one slow command (`KEYS *`, big `SORT`) **blocks everything**; no multi-core scaling per node.
-- **Scaling:** vertical hits a RAM ceiling; Cluster adds horizontal scale but brings resharding + **cross-slot/multi-key limits**.
-- **Ops overhead:** HA (Sentinel/Cluster), eviction tuning, fragmentation, persistence config.
-- **Not a full DB:** no joins/complex queries — cache / fast-access layer, not primary relational store.
-
-| Trade-off | Cost |
-|---|---|
-| In-memory speed | High RAM cost, size limits |
-| Persistence | I/O overhead, small loss window |
-| Async replication | Possible write loss on failover |
-| Single-threaded | One slow command blocks all |
-| Cluster scaling | Resharding + multi-key limits |
-
-**Rule:** Redis trades **durability, consistency, and rich querying** for **raw speed and simplicity**. Design around RAM limits, async replication, and single-threaded execution.
-
->  Redis buys raw speed by keeping everything in RAM and running single-threaded, which is exactly why it trades away durability, strong consistency, unlimited size, and rich querying — design around those limits rather than fighting them.
 
 ---
 
@@ -919,23 +860,3 @@ A good way to answer is:
 ### **2. Scaling Reads with Strong Consistency**
 
 > Serve reads from the **primary** or use **strongly consistent distributed databases** that rely on **synchronous replication, quorum reads/writes (`W + R > N`), or consensus protocols like Raft/Paxos**. This guarantees the latest committed data on every read but increases **read/write latency and coordination overhead**, reducing overall throughput compared to eventual consistency.
-
----
-
-## Q. Caching Patterns
-
-| Pattern                        | Explanation                                                                                                                                                                     |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cache-Aside (Lazy Loading)** | Application checks the cache first. On a cache miss, it reads from the database, stores the result in the cache, and returns it. Most commonly used.                            |
-| **Read-Through**               | Application always reads from the cache. On a cache miss, the cache itself fetches the data from the database, stores it, and returns it.                                       |
-| **Write-Through**              | Application writes to the cache, and the cache synchronously writes the data to the database. Cache and DB stay consistent, but writes are slower.                              |
-| **Write-Behind (Write-Back)**  | Application writes only to the cache. The cache asynchronously flushes changes to the database later. Faster writes, but risk of data loss if the cache fails before flushing.  |
-| **Write-Around**               | Application writes directly to the database and skips the cache. The cache is populated only when the data is read later, avoiding cache pollution from rarely accessed writes. |
-
-Easy way to remember:
-
-Cache-Aside → App manages the cache.
-Read-Through → Cache manages reads.
-Write-Through → Cache writes to DB immediately.
-Write-Behind → Cache writes to DB later.
-Write-Around → Writes bypass the cache.

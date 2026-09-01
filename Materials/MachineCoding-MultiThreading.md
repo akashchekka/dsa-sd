@@ -464,6 +464,265 @@ while len(self._queue) == 0:
 
 ---
 
+### 3a. Variant: Build It With Semaphores Instead
+
+**Clarify the question first.** "Blocking queue + semaphore" means two different things, and answering the wrong one wastes the round:
+
+| Interpretation | What you build | Section |
+|----------------|----------------|---------|
+| Implement the queue's blocking *using* semaphores | Counting semaphores replace the condition variables | 3a (below) |
+| Add a semaphore *on top of* an existing queue | Concurrency limit on a downstream resource | 3b |
+
+This variant is Dijkstra's original bounded-buffer solution. Two counting semaphores track the slot counts, and a separate mutex protects the container:
+
+```python
+import threading
+from collections import deque
+from typing import TypeVar, Generic, Optional
+
+T = TypeVar('T')
+
+class SemaphoreBlockingQueue(Generic[T]):
+    """Bounded blocking queue built from two counting semaphores + a mutex.
+
+    Invariant: empty_slots + filled_slots + in_flight == capacity
+    """
+
+    def __init__(self, capacity: int) -> None:
+        self._items: deque[T] = deque()
+        self._mutex = threading.Lock()
+        self._empty_slots = threading.Semaphore(capacity)  # producers draw from this
+        self._filled_slots = threading.Semaphore(0)        # consumers draw from this
+
+    def put(self, item: T) -> None:
+        self._empty_slots.acquire()          # blocks while full
+        with self._mutex:
+            self._items.append(item)
+        self._filled_slots.release()
+
+    def get(self) -> T:
+        self._filled_slots.acquire()         # blocks while empty
+        with self._mutex:
+            item = self._items.popleft()
+        self._empty_slots.release()
+        return item
+```
+
+- Why acquire the semaphore before the mutex? Reversing it deadlocks: a full-queue producer would sleep holding the mutex, so no consumer could ever drain it.
+    - ## The core problem: sleeping while holding the key
+
+        A mutex is a resource one thread owns exclusively. A semaphore `acquire()` on an exhausted counter **puts the calling thread to sleep**. Critically, `Semaphore.acquire()` does *not* release any lock you happen to be holding — it just blocks where it stands.
+
+        So if you take the mutex first and then block on the semaphore, the producer falls asleep **inside the critical section**, still owning the mutex.
+
+        ## Concrete trace
+
+        Setup: `capacity = 2`, queue currently holds 2 items. So `empty_slots = 0`, `filled_slots = 2`.
+
+        ```python
+        # ❌ WRONG ORDER
+        def put(self, item):
+            with self._mutex:                  # 1. producer takes the mutex
+                self._empty_slots.acquire()    # 2. empty_slots == 0 → SLEEPS HERE
+                self._items.append(item)       #    never reached
+        ```
+
+        **Step 1** — Producer P enters `put()`, acquires the mutex. P now owns it.
+
+        **Step 2** — P calls `_empty_slots.acquire()`. The counter is 0 because the queue is full, so P blocks. The `with` block has not exited, so **P is asleep holding the mutex**.
+
+        **Step 3** — Consumer C enters `get()`:
+
+        ```python
+        def get(self):
+            self._filled_slots.acquire()   # succeeds — filled_slots == 2
+            with self._mutex:              # BLOCKS — P owns the mutex
+                item = self._items.popleft()
+            self._empty_slots.release()    # never reached
+        ```
+
+        C gets its permit immediately (there *are* items). But to actually pop one, it needs the mutex — which P is holding while asleep. C blocks.
+
+        **Step 4** — Stalemate:
+
+        ```
+        P waits for: empty_slots  ──► only released by C, in get()
+        C waits for: mutex        ──► only released by P, in put()
+
+        P ──────► C
+        ▲         │
+        └─────────┘   circular wait
+        ```
+
+        P can only wake if C completes a `get()`. C can only complete a `get()` if P releases the mutex. Neither can move. **Permanent deadlock** — no timeout, no spurious wakeup saves you.
+
+        The trap is that the only thread capable of unblocking P must first pass through the very resource P is holding hostage.
+
+        ## Why the correct order is safe
+
+        ```python
+        # ✅ CORRECT
+        def put(self, item):
+            self._empty_slots.acquire()    # sleep here, holding NOTHING
+            with self._mutex:              # only taken once a slot is guaranteed
+                self._items.append(item)
+            self._filled_slots.release()
+        ```
+
+        P blocks while holding no resources at all. C is free to acquire the mutex, pop an item, and `release()` `empty_slots`, which wakes P. Progress is always possible.
+
+        The mutex is now held only across `self._items.append(item)` — a bounded, non-blocking operation. That's the invariant: **a critical section must never contain a blocking wait.**
+
+        ## Mapping to the four Coffman conditions
+
+        Your section 6 lists these; the fix here breaks the fourth:
+
+        | Condition | Present in the buggy version? |
+        |-----------|-------------------------------|
+        | Mutual exclusion | Yes — the mutex is exclusive |
+        | Hold and wait | Yes — P holds the mutex while waiting for a semaphore permit |
+        | No preemption | Yes — nobody can force the mutex away from P |
+        | Circular wait | Yes — P→C→P |
+
+        Acquiring the semaphore first eliminates **hold-and-wait**, which collapses the cycle.
+
+        ## Why the condition-variable version doesn't have this bug
+
+        This is the sharpest contrast to draw in an interview. The condition-variable `put()` in section 3 *also* blocks while inside the lock:
+
+        ```python
+        with self._not_full:                            # holds the lock
+            while len(self._queue) >= self._capacity:
+                self._not_full.wait()                   # blocks — but RELEASES the lock
+        ```
+
+        The difference is that `Condition.wait()` **atomically releases the lock and sleeps**, then re-acquires it on wake. That's the entire purpose of a condition variable. `Semaphore.acquire()` has no such lock-releasing behavior — it doesn't even know a lock exists.
+
+        So the ordering rule isn't arbitrary: it's the manual compensation for the fact that semaphores lack the atomic release-and-wait that condition variables give you for free.
+
+- Why is a separate mutex still needed? The semaphores grant permission to act; they do not serialize the deque mutation itself. With capacity > 1, two producers can hold permits simultaneously.
+- Condition variable vs semaphore trade-off. Semaphores encode the count in the primitive, so no predicate re-check loop is needed. But they can't express arbitrary predicates, they make shutdown awkward (you must release sentinel permits to wake blocked threads), and get(timeout=...) needs care to avoid leaking a permit on timeout.
+
+**Why no `while` loop here?** The semaphore *is* the counter. A successful `acquire()` is itself the proof that a slot exists, so there is no predicate to re-check. Condition variables need `while` because `notify()` only hints that the predicate *might* now hold.
+
+### Critical: Acquire the Semaphore BEFORE the Mutex
+
+```python
+# ❌ DEADLOCK — producer sleeps on a full queue while holding the mutex,
+#    so no consumer can ever enter get() to drain it
+def put(self, item):
+    with self._mutex:
+        self._empty_slots.acquire()
+        self._items.append(item)
+
+# ✅ CORRECT — block outside the mutex, hold the mutex only for the mutation
+def put(self, item):
+    self._empty_slots.acquire()
+    with self._mutex:
+        self._items.append(item)
+    self._filled_slots.release()
+```
+
+This is the single most likely follow-up. The semaphore grants *permission* to act; the mutex serializes the `deque` mutation itself. With `capacity > 1` two producers can legitimately hold permits at the same time, so the mutex is not redundant.
+
+### Adding Shutdown: The Hard Part
+
+Semaphores have no `notify_all()`. To wake every blocked thread you must release one permit per waiter. The clean trick is a **cascading poison token** — each waking thread passes the permit along before it exits:
+
+```python
+class ShutdownableSemaphoreQueue(Generic[T]):
+    def __init__(self, capacity: int) -> None:
+        self._items: deque[T] = deque()
+        self._mutex = threading.Lock()
+        self._empty_slots = threading.Semaphore(capacity)
+        self._filled_slots = threading.Semaphore(0)
+        self._shutdown = False
+
+    def put(self, item: T) -> None:
+        self._empty_slots.acquire()
+        with self._mutex:
+            if self._shutdown:
+                self._empty_slots.release()      # hand the token to the next waiter
+                raise RuntimeError("Queue is shut down")
+            self._items.append(item)
+        self._filled_slots.release()
+
+    def get(self, timeout: Optional[float] = None) -> Optional[T]:
+        if not self._filled_slots.acquire(timeout=timeout):
+            raise TimeoutError("Timed out waiting for item")
+        with self._mutex:
+            if not self._items:                  # only possible during shutdown
+                self._filled_slots.release()
+                return None
+            item = self._items.popleft()
+        self._empty_slots.release()
+        return item
+
+    def shutdown(self) -> None:
+        with self._mutex:
+            if self._shutdown:
+                return
+            self._shutdown = True
+        self._filled_slots.release()             # starts the consumer cascade
+        self._empty_slots.release()              # starts the producer cascade
+```
+
+Two consequences worth naming out loud:
+
+- Use `Semaphore`, **not** `BoundedSemaphore`. The cascade deliberately releases permits that were never acquired, which `BoundedSemaphore` rejects with `ValueError`.
+- On a `get()` timeout, no permit leaks because a failed `acquire()` consumes nothing. Leaks happen only if you `acquire()` and then return early without a matching `release()`.
+
+### Condition Variable vs Semaphore — Which to Choose
+
+| Dimension | Condition Variable | Semaphore |
+|-----------|-------------------|-----------|
+| State lives in | Your own predicate | The primitive's counter |
+| Loop needed | Yes — `while` for spurious wakeups | No — acquire proves the slot |
+| Arbitrary predicates | Yes (any boolean expression) | No (counting only) |
+| Broadcast wake | `notify_all()` — one call | Manual, one release per waiter |
+| Shutdown | Straightforward | Needs cascade or waiter counting |
+| Deadlock risk | Lock ordering | Semaphore-before-mutex ordering |
+
+**Default to condition variables** for a production-style queue: shutdown, timeouts, and future predicate changes are all easier. Reach for semaphores when the constraint genuinely *is* a count and you want the invariant enforced by the primitive.
+
+---
+
+### 3b. Variant: Semaphore Alongside a Queue (Different Resource)
+
+Adding a semaphore to cap *queue capacity* is redundant — `Queue(maxsize=N)` already does that, and the two limits will drift out of sync. The legitimate pattern bounds **concurrent processing**, which is an orthogonal constraint:
+
+```python
+import queue
+import threading
+
+work_queue = queue.Queue(maxsize=1000)     # bounds backlog and memory
+db_permits = threading.Semaphore(10)       # bounds concurrent DB connections
+
+def worker() -> None:
+    while True:
+        task = work_queue.get()
+        try:
+            with db_permits:               # 50 workers, at most 10 touch the DB
+                handle(task)
+        finally:
+            work_queue.task_done()
+```
+
+The two primitives solve different problems:
+
+| Primitive | Protects against | Failure if omitted |
+|-----------|------------------|--------------------|
+| `Queue(maxsize)` | Unbounded backlog | Memory growth, latency blowup |
+| `Semaphore(N)` | Downstream saturation | Connection pool exhaustion, dependency overload |
+
+The queue applies backpressure to *producers*; the semaphore protects a *downstream dependency* from the consumers. Naming that distinction is what turns this into a design-judgment answer instead of a primitives-trivia answer.
+
+### What to Say in Interview
+
+> "I'd clarify whether you want the queue's blocking built out of semaphores, or a concurrency limit layered on an existing queue. For the first, two counting semaphores track empty and filled slots with a mutex for the container — and the semaphore must be acquired before the mutex, or a full-queue producer sleeps holding the lock and deadlocks. The trade-off against condition variables is shutdown: semaphores have no broadcast, so I'd cascade a poison token. For the second, the queue bounds the backlog and the semaphore bounds concurrent access to a downstream resource — those are orthogonal limits, so both belong."
+
+---
+
 ## 4. Rate Limiter — Token Bucket
 
 **Asked at:** Uber, Google, Stripe, Amazon
