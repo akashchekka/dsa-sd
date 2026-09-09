@@ -504,9 +504,11 @@ Raft fixes this with one of:
 
 $$\text{Raft} + \text{leader reads via ReadIndex/lease} = \textbf{linearizable (strong)}$$
 
-Raft's majority commit gives you a strongly-consistent **write order and durability out of the box**; you get strongly-consistent **reads only if you route them through the leader with ReadIndex or a lease**. That's exactly why your guide's rule holds: *one leader + majority agreement + don't ack until replicated* — plus **fence the leader** so stale reads can't sneak through.
+> Raft's majority commit gives you a strongly-consistent **write order and durability out of the box**; you get strongly-consistent **reads only if you route them through the leader with ReadIndex or a lease**. That's exactly why your guide's rule holds: *one leader + majority agreement + don't ack until replicated* — plus **fence the leader** so stale reads can't sneak through.
 
 Strong consistency isn't guaranteed by where the read is served — it's guaranteed by the follower synchronizing its apply progress to a leader-verified commit point first. The leader still anchors correctness (it certifies "I'm leader, here's the committed index"); the follower just serves the bytes once it's provably caught up.
+
+> A partition does not change Raft membership or create a replacement node. The majority elects a new leader, while the unreachable node remains one of the configured members. When the old node reconnects, it sees the newer term, becomes a follower, discards conflicting uncommitted entries, and catches up from the leader. If it was explicitly replaced, the old node cannot rejoin as a voter.
 
 ---
 

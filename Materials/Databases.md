@@ -890,9 +890,60 @@ This isn't a religious debate — it's an engineering trade-off. The right choic
 | **Scaling** | Primarily vertical (bigger machine). Horizontal with effort (Vitess, Citus, CockroachDB). | Designed for horizontal scale from the start. |
 | **Best for** | Complex queries, relationships, strong consistency requirements. | High throughput, flexible/evolving schemas, massive horizontal scale. |
 
-**When to choose SQL**: You have complex relationships, need joins, need multi-row transactions, your data has a well-defined schema, or you need strong consistency guarantees.
+### Do SQL and NoSQL Share the Same Internals?
 
-**When to choose NoSQL**: Your data is denormalized or self-contained (like a user profile document), you need to scale writes horizontally, your schema changes frequently, or you have extreme throughput requirements.
+Often, yes. SQL versus NoSQL primarily describes the **data model, query interface, transaction guarantees, and distribution model**, not how bytes must be organized on disk. Both categories reuse the same fundamental storage-engine techniques:
+
+* B/B+ trees for ordered indexes and range scans
+* LSM trees for write-heavy workloads
+* Hash indexes for point lookups
+* Write-ahead logs or journals for crash recovery
+* Pages, blocks, buffer pools, and caches
+* MVCC or locks for concurrency control
+* Compaction, checksums, replication, partitioning, and consensus
+
+| Database | Model | Common Internals |
+|---|---|---|
+| **PostgreSQL** | Relational SQL | Heap tables, B-tree indexes, WAL, MVCC |
+| **MySQL/InnoDB** | Relational SQL | Clustered B+ tree, secondary B+ trees, redo log, MVCC |
+| **MongoDB/WiredTiger** | Document NoSQL | B-trees, journal, MVCC, compression |
+| **Cassandra** | Wide-column NoSQL | LSM tree, commit log, memtables, SSTables, compaction |
+| **RocksDB** | Embedded key-value | LSM tree, WAL, SSTables, Bloom filters, compaction |
+
+A B+ tree leaf in InnoDB can contain a relational row, while a B-tree index in MongoDB maps a field value to a BSON document. Cassandra instead organizes partitioned rows in memtables and immutable SSTables. The underlying structures may overlap, but their **key encoding, record layout, indexing semantics, and transaction metadata** differ.
+
+### What Changes With NoSQL?
+
+The main differences appear in the layers above the storage engine:
+
+| Layer | SQL Systems | NoSQL Systems |
+|---|---|---|
+| **Data model** | Normalized tables, rows, columns, and relationships | Key-value pairs, documents, wide-column partitions, or graph nodes and edges |
+| **Queries** | Declarative SQL, joins, aggregations, and cost-based optimization | Often access-pattern-specific APIs with limited or no joins |
+| **Schema** | Usually enforced centrally by the database | Often flexible at storage level and enforced by application code or validation rules |
+| **Distribution** | Traditional systems were single-node-first; distributed SQL adds sharding and coordination | Many systems were designed around partition keys, replication, and horizontal scaling |
+| **Transactions** | Commonly support multi-row and multi-table ACID transactions | Guarantees vary from per-item atomicity to full distributed ACID |
+| **Consistency** | Strong consistency is common, though configuration matters | May offer strong, eventual, causal, or tunable consistency |
+
+"Schema-less" does not mean that no schema exists. It usually means that schema enforcement has moved from a rigid database definition to application code, document validation, or per-record versioning.
+
+```text
+Database
+├── Interface and data model: SQL, document, key-value, graph
+├── Query and transaction layer
+├── Distribution and replication layer
+└── Storage engine
+    ├── B+ tree or LSM tree
+    ├── WAL or journal
+    ├── Cache and buffer management
+    └── Files, pages, or SSTables
+```
+
+> **Interview takeaway**: SQL versus NoSQL mostly concerns the upper layers. B+ tree versus LSM tree concerns the storage-engine layer. Choose based on access patterns, transaction boundaries, consistency guarantees, and scaling requirements rather than assuming one category has unique internals.
+
+> **When to choose SQL**: You have complex relationships, need joins, need multi-row transactions, your data has a well-defined schema, or you need strong consistency guarantees.
+
+> **When to choose NoSQL**: Your data is denormalized or self-contained (like a user profile document), you need to scale writes horizontally, your schema changes frequently, or you have extreme throughput requirements.
 
 ---
 
@@ -1520,3 +1571,41 @@ Add a random suffix to the partition key (e.g., `user_id + random(0,9)`) to spre
 | Analytics, columnar scans | Column store / OLAP | ClickHouse, BigQuery, Redshift |
 | Full-text search | Inverted index | Elasticsearch, OpenSearch |
 | Coordination / config / leader election | Consensus-based | etcd, Zookeeper |
+
+### Database and Storage Engine Comparison
+
+The ratings below are directional, not benchmarks. Actual throughput and latency depend on hardware, dataset size, indexes, replication, consistency level, query shape, and whether requests cross regions. "High read fit" can also mean very different operations: PostgreSQL handles flexible indexed queries, Cassandra handles partition-key reads, and ClickHouse handles large analytical scans.
+
+| Database | SQL / NoSQL | Model | Storage Engine and Key Internals | Read Fit | Write Fit | Throughput | Typical Latency Profile | Best Suited For | Main Trade-off |
+|---|---|---|---|---|---|---|---|---|---|
+| **PostgreSQL** | SQL | Relational, row-store | Heap tables, B-tree indexes, WAL, buffer pool, MVCC | High | Medium-High | Medium-High | Low milliseconds for indexed OLTP queries | Complex SQL, joins, transactions, mixed OLTP | Horizontal write scaling requires sharding or a distributed extension |
+| **MySQL/InnoDB** | SQL | Relational, row-store | Clustered B+ tree primary index, secondary B+ trees, redo/undo logs, buffer pool, MVCC | High | High | High | Low milliseconds for indexed OLTP queries | Web OLTP, primary-key access, read-heavy or balanced workloads | Secondary lookups may require another primary-key tree lookup |
+| **CockroachDB** | SQL | Distributed relational SQL | Pebble LSM engine, MVCC, WAL, Raft-replicated ranges, distributed transactions | High | High | High, horizontally scalable | Low milliseconds locally; higher for cross-range or cross-region transactions | Distributed ACID, resilient multi-region applications | Consensus and distributed commits add latency and transaction retries |
+| **MongoDB/WiredTiger** | NoSQL | Document | B-trees, document indexes, journal, cache, compression, MVCC | High | High | High with sharding | Low milliseconds for indexed document access | Flexible documents, catalogs, profiles, content, evolving schemas | Cross-document joins and highly relational queries are less natural |
+| **Cassandra** | NoSQL | Wide-column | LSM tree, commit log, memtables, SSTables, Bloom filters, compaction | High for partition-key reads | Very High | Very High, horizontally scalable | Low, predictable latency when queries match the partition key | Write-heavy event, IoT, messaging, and time-series workloads | Query-driven denormalization, limited ad hoc queries, compaction overhead |
+| **ScyllaDB** | NoSQL | Wide-column | LSM storage, commit log, memtables, SSTables, shard-per-core architecture | High for partition-key reads | Very High | Very High, horizontally scalable | Low tail latency for well-partitioned workloads | Cassandra-compatible workloads needing high throughput and low latency | Operational tuning and partition-key design remain critical |
+| **DynamoDB** | NoSQL | Managed key-value and document | Proprietary partitioned storage, replicated partitions, local/global secondary indexes | Very High for key access | Very High | Very High, automatically scalable | Single-digit milliseconds for common same-region operations | Serverless key-value access, sessions, carts, metadata, event state | Access patterns and partition keys must be designed up front; costs scale with usage |
+| **Redis** | NoSQL | In-memory key-value and data structures | Hash tables, skip lists, listpacks, radix trees, event loop, optional AOF/RDB persistence | Very High | Very High | Very High | Sub-millisecond to low milliseconds | Caching, counters, sessions, leaderboards, queues, rate limiting | Memory cost and persistence semantics make it a poor default system of record |
+| **RocksDB** | NoSQL | Embedded key-value | LSM tree, WAL, memtables, SSTables, Bloom filters, block cache, compaction | Medium-High | Very High | Very High on one host | Low local latency, with compaction-related tail spikes possible | Embedded storage, write-heavy services, building custom databases | No built-in distributed query, replication, or SQL layer |
+| **ClickHouse** | SQL | Columnar analytical SQL | MergeTree family, immutable sorted columnar parts, sparse primary index, compression, background merges | Very High for analytical scans | High for batch or append ingestion | Very High for scans and aggregations | Fast analytical queries; not intended for per-row OLTP latency | Logs, observability, dashboards, event analytics, large aggregations | Frequent row updates, deletes, and transactional OLTP are not its strength |
+| **BigQuery** | SQL | Serverless columnar warehouse | Distributed columnar storage, separated compute and storage, parallel scans and shuffle | Very High for large analytical scans | High for batch and streaming ingestion | Extremely High for analytical processing | Usually seconds rather than OLTP-style milliseconds | Large-scale ad hoc analytics, warehousing, business intelligence | Scan-based pricing and higher per-query latency than operational databases |
+| **Elasticsearch** | NoSQL | Search and document analytics | Lucene inverted indexes, immutable segments, translog, segment merges, doc values | Very High for text search | High for indexing | High with sharding | Low milliseconds to seconds depending on query and aggregation | Full-text search, log search, relevance ranking, faceted navigation | Near-real-time visibility, merge costs, and weaker transaction semantics |
+| **Neo4j** | NoSQL | Graph | Native node/relationship records, index-free adjacency, range/text indexes, transaction log | Very High for connected traversals | Medium | Medium-High for graph operations | Low for local traversals; grows with traversal breadth | Fraud graphs, recommendations, knowledge graphs, relationship exploration | Large global scans and simple key-value workloads fit other engines better |
+| **TimescaleDB** | SQL | Relational time-series | PostgreSQL heap/B-tree/WAL/MVCC plus hypertable chunks, partition pruning, columnar compression | High | High | High for time-partitioned ingestion and queries | Low milliseconds for indexed windows; longer for broad analytics | Metrics, sensor data, financial time series needing SQL and ACID | Inherits PostgreSQL scaling considerations and extension-specific operations |
+| **SQLite** | SQL | Embedded relational | B-tree pages, page cache, rollback journal or WAL | High on one device | Medium | Medium | Very low in-process latency without a network hop | Mobile, desktop, local tools, tests, edge devices | Single-file architecture and write concurrency limit server-scale workloads |
+| **etcd** | NoSQL | Distributed key-value | Bbolt B+ tree backend, Raft log and consensus, MVCC revisions, WAL and snapshots | High for small keyspaces | Low-Medium | Low-Medium by database standards | Low milliseconds with quorum available | Configuration, service discovery, leader election, distributed coordination | Optimized for correctness and small control-plane data, not bulk application traffic |
+
+### Workload Combination Shortcuts
+
+| Workload Combination | Strong Starting Choices | Why |
+|---|---|---|
+| Read-heavy + complex queries + ACID | PostgreSQL, MySQL/InnoDB | B-tree indexes, mature optimizers, joins, and transactional semantics |
+| Read-heavy + analytical scans + high throughput | ClickHouse, BigQuery | Columnar layout, compression, and parallel vectorized scans |
+| Read-heavy + full-text search + low latency | Elasticsearch, OpenSearch | Inverted indexes and relevance-oriented query execution |
+| Read-heavy + graph traversal | Neo4j | Native adjacency avoids repeated join-table index lookups |
+| Write-heavy + very high throughput | Cassandra, ScyllaDB, RocksDB | LSM write path converts updates into sequential appends and background compaction |
+| Write-heavy + horizontal scale + distributed ACID | CockroachDB | Replicated ranges and distributed transactions preserve SQL semantics |
+| Read/write-heavy + low-latency key access | DynamoDB, Redis | Partitioned key routing or in-memory access avoids general-purpose query overhead |
+| Time-series writes + SQL queries | TimescaleDB | Time partitioning and PostgreSQL SQL/transaction support |
+| Local embedded + lowest network overhead | SQLite, RocksDB | In-process access removes the database network round trip |
+| Strongly consistent coordination data | etcd | Raft quorum provides linearizable operations for small control-plane datasets |
