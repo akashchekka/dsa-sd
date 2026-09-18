@@ -2,124 +2,29 @@
 
 ## Table of Contents
 
-- [Q: All that I need to know about Kafka](#q-all-that-i-need-to-know-about-kafka)
-- [Q: What if Kafka fails?](#q-what-if-kafka-fails)
-- [Q: How do consumers replay events using offsets to recover missed notifications?](#q-how-do-consumers-replay-events-using-offsets-to-recover-missed-notifications)
 - [Q: Load Balancing](#q-load-balancing)
 - [Q: How to achieve High Availability and High Consistency in distributed systems? (FAANG)](#q-how-to-achieve-high-availability-and-high-consistency-in-distributed-systems-faang)
 - [Q: Redundancy & failover (active-active vs active-passive, health checks, leader election)?](#q-redundancy--failover-active-active-vs-active-passive-health-checks-leader-election)
 - [Q: Availability "nines" — downtime numbers (2 to 5 nines)?](#q-availability-nines--downtime-numbers-2-to-5-nines)
-- [Q: How are Linearizability and Distributed Transactions (2PC/3PC) achieved?](#q-how-are-linearizability-and-distributed-transactions-2pc3pc-achieved)
-- [Q: What is the Saga pattern?](#q-what-is-the-saga-pattern)
-- [Q: What to use in production for strong consistency?](#q-what-to-use-in-production-for-strong-consistency)
 - [Q: How do you achieve strong consistency? (simple)](#q-how-do-you-achieve-strong-consistency-simple)
 - [Q: Explain Raft and Paxos quorum.](#q-explain-raft-and-paxos-quorum)
-- [Q: How does Spanner combine 2PC + Paxos? (removing 2PC's SPOF)](#q-how-does-spanner-combine-2pc--paxos-removing-2pcs-spof)
 - [Q: Is Raft a different thing altogether (vs Paxos)?](#q-is-raft-a-different-thing-altogether-vs-paxos)
+- [Q: Are quorum read/write and Raft the same thing?](#q-are-quorum-readwrite-and-raft-the-same-thing)
+- [Q: Which DBs use Quorum R/W vs Raft vs Paxos?](#q-which-dbs-use-quorum-rw-vs-raft-vs-paxos)
+- [Q: How are Linearizability and Distributed Transactions (2PC/3PC) achieved?](#q-how-are-linearizability-and-distributed-transactions-2pc3pc-achieved)
+- [Q: What is the Saga pattern?](#q-what-is-the-saga-pattern)
 - [Q: How to achieve BOTH high availability and high consistency? (practical mechanisms)](#q-how-to-achieve-both-high-availability-and-high-consistency-practical-mechanisms)
-- [The catch: reads can still be stale](#the-catch-reads-can-still-be-stale)
-- [Bottom line](#bottom-line)
+- [Q: What to use in production for strong consistency?](#q-what-to-use-in-production-for-strong-consistency)
+- [Q: Do Spanner / CockroachDB use Raft/Paxos + 2PC/3PC for strong consistency?](#q-do-spanner--cockroachdb-use-raftpaxos--2pc3pc-for-strong-consistency)
+- [Q: How does Spanner combine 2PC + Paxos? (removing 2PC's SPOF)](#q-how-does-spanner-combine-2pc--paxos-removing-2pcs-spof)
+- [Q: Consistency in SQL?](#q-consistency-in-sql)
+- [Quick Revision: B+ Trees, InnoDB vs PostgreSQL](#quick-revision-b-trees-innodb-vs-postgresql)
 - [Q: All I need to know about Cassandra (HLD interview)](#q-all-i-need-to-know-about-cassandra-hld-interview)
 - [Q: Is Cassandra for write-heavy and Postgres/MySQL for read-heavy?](#q-is-cassandra-for-write-heavy-and-postgresmysql-for-read-heavy)
 - [Q: Any DB that excels at write-heavy AND read-heavy with scaling and strong transactional consistency?](#q-any-db-that-excels-at-write-heavy-and-read-heavy-with-scaling-and-strong-transactional-consistency)
-- [Q: Do Spanner / CockroachDB use Raft/Paxos + 2PC/3PC for strong consistency?](#q-do-spanner--cockroachdb-use-raftpaxos--2pc3pc-for-strong-consistency)
-- [Q: Consistency in SQL?](#q-consistency-in-sql)
-- [Quick Revision: B+ Trees, InnoDB vs PostgreSQL](#quick-revision-b-trees-innodb-vs-postgresql)
-- [Q: Are quorum read/write and Raft the same thing?](#q-are-quorum-readwrite-and-raft-the-same-thing)
-- [Q: Which DBs use Quorum R/W vs Raft vs Paxos?](#q-which-dbs-use-quorum-rw-vs-raft-vs-paxos)
-
----
-
-## Q: All that I need to know about Kafka
-
-**What it is:** Distributed, append-only **commit log** for streaming events. Producers write, consumers read by offset; messages stored durably and replayable. Decouples services, handles high throughput.
-
-### Core concepts
-- **Topic:** Named stream split into **partitions**.
-- **Partition:** Ordered append-only log. **Order guaranteed only within a partition.**
-- **Offset:** Sequential message ID in a partition (the bookmark).
-- **Producer:** Partition chosen by key hash (same key → same partition → ordered).
-- **Consumer group:** Each partition read by **exactly one** consumer in a group → parallelism = partition count.
-- **Broker:** A Kafka server; cluster = many brokers.
-- **Controller:** Metadata + leader election. Newer Kafka = **KRaft** (no ZooKeeper).
-
-### Replication & durability
-- Each partition: **leader** + **follower replicas** (`replication.factor`, usually 3).
-- **ISR (In-Sync Replicas):** replicas caught up to leader; new leader elected from ISR on failure.
-- `min.insync.replicas=2` + `acks=all` → no acknowledged data loss.
-
-### Delivery guarantees
-| Guarantee | How |
-|---|---|
-| At-most-once | Commit offset before processing (may lose) |
-| **At-least-once** (default) | Commit after processing (may duplicate → need idempotent consumer) |
-| Exactly-once (EOS) | Idempotent producer + transactions |
-
-### Producer essentials
-- `acks`: `0` fire-forget / `1` leader only / `all` safest. `enable.idempotence=true` → no duplicate writes on retry.
-- Batching (`linger.ms`, `batch.size`) + compression for throughput. **Key decides partition → ordering.**
-
-### Consumer essentials
-- **Pull-based;** commit offset manually after success. `auto.offset.reset`: `earliest` (replay all) / `latest` (only new).
-- **Rebalancing:** partitions reassigned when consumers join/leave (briefly pauses).
-
-### Retention & replay
-- Kept by **time** (`retention.ms`) or **size** (`retention.bytes`) — not deleted on read.
-- **Log compaction:** keeps latest value per key. **Replay** = seek to older offset/timestamp.
-
-### When to use / avoid
-- **Use:** event streaming, log aggregation, decoupling microservices, high throughput, replay/audit.
-- **Avoid:** simple request/response, small task queues (RabbitMQ/SQS), strict global ordering.
-
-### Kafka vs RabbitMQ
-| Kafka | RabbitMQ |
-|---|---|
-| Log retained, replayable | Message removed on ack |
-| Pull-based, consumer groups | Push-based, smart broker |
-| Huge throughput, ordered per partition | Flexible routing, lower throughput |
-
-**Golden rules:** Order **per-partition**. Parallelism = **partition count**. Default **at-least-once** → make consumers **idempotent**. Durability = **replication + `acks=all` + `min.insync.replicas`**.
-
-> Producer hashes key → picks partition → appends to that partition's log → each consumer group reads all partitions independently, splitting them among its consumers.
-
->  Kafka is a replayable, partitioned commit log — producers hash a key to a partition, consumers read independently by offset, order holds only within a partition, and durability comes from replication with `acks=all` + `min.insync.replicas`. Because it defaults to at-least-once, correctness hinges on making consumers idempotent.
-
----
-
-## Q: What if Kafka fails?
-
-Kafka survives most failures via **replication**; design clients to tolerate broker downtime.
-
-- **Broker dies:** new leader auto-elected from ISR. `replication.factor=3`, `min.insync.replicas=2`, `acks=all` → no acknowledged loss.
-- **Producer can't reach Kafka:** retries + `enable.idempotence=true`. Full outage → **Outbox pattern** (write event to DB in same txn, relay publishes later).
-- **Consumer crashes:** resumes from last committed **offset**; make consumers **idempotent** (at-least-once).
-- **Whole cluster down:** **multi-AZ/region** replication (MirrorMaker) + **backpressure** upstream.
-
-| Failure | Mitigation |
-|---|---|
-| Single broker | `replication.factor≥3`, `acks=all` |
-| Producer can't publish | Retries + idempotence, Outbox pattern |
-| Consumer crash | Resume from offset, idempotent consumer |
-| Full outage | Multi-AZ/region, Outbox in DB |
-
-**Rule:** Never assume Kafka is up. Decouple writes with the **Outbox pattern**, make consumers **idempotent**, tune **replication + acks**.
-
->  Kafka tolerates most failures through partition replication and ISR-based leader election; the engineering job is to assume it can still go down — retry idempotently, decouple writes via the Outbox pattern, resume consumers from committed offsets, and replicate across AZs/regions.
-
----
-
-## Q: How do consumers replay events using offsets to recover missed notifications?
-
-Kafka **keeps messages** (not deleted on read); permanent **offset** lets consumers rewind and reprocess.
-
-- **Why it works:** messages stay within the **retention window** (`retention.ms`); committed offset is just a bookmark.
-- **How:** seek to earlier offset — `seek()`, `seekToBeginning()`, by timestamp, or `--reset-offsets`. New group + `auto.offset.reset=earliest` re-reads whole topic.
-- **Safety:** replay can double-process → dedupe by unique key (`event_id`).
-- **Patterns:** Dead Letter Topic for failures; commit offset **only after** a successful send.
-
-**Rule:** Replay = **seek to offset** + **idempotent dedupe**.
-
->  Because Kafka retains messages independently of consumption, recovery is just rewinding to an older offset and reprocessing; the only requirement is idempotent dedupe so replayed events don't produce duplicate side effects.
+- [Q: All that I need to know about Kafka](#q-all-that-i-need-to-know-about-kafka)
+- [Q: What if Kafka fails?](#q-what-if-kafka-fails)
+- [Q: How do consumers replay events using offsets to recover missed notifications?](#q-how-do-consumers-replay-events-using-offsets-to-recover-missed-notifications)
 
 ---
 
@@ -232,6 +137,282 @@ State **CAP/PACELC** → ask **strong or eventual** for this feature? → pick q
 
 ---
 
+## Q: How do you achieve strong consistency? (simple)
+
+**One line:** Funnel all writes through a **single agreed order** and make every read see a **majority** → a read can never miss the latest write.
+
+### 3 core mechanisms
+1. **Single leader:** all writes ordered → no conflicting concurrent writes.
+2. **Majority quorum (Raft/Paxos):** commit only after a majority stores it; reads consult a majority → **W + R > N** overlap.
+3. **Synchronous replication:** ack only **after** replicas persist — never from one node's memory.
+
+### Safety nets
+- **Leader leases / fencing** → no stale leader serving (no split-brain).
+- **Synchronized clocks (Spanner TrueTime)** → global strong consistency.
+
+**Trade-off:** coordination round-trip → **higher latency**; minority refuses to serve under partition (CP).
+
+**Mental model:** *one leader + majority agreement + don't ack until replicated.*
+
+>  The essence of strong consistency is one leader ordering all writes, a majority persisting each write before it's acknowledged, and reads consulting a majority so they can never miss the latest write — paid for with a coordination round-trip of latency.
+
+---
+
+## Q: Explain Raft and Paxos quorum.
+
+**Consensus** = a cluster agrees on a single ordered log despite failures. **Majority quorum** makes it safe.
+
+### Quorum — the foundation
+$$\text{quorum} = \lfloor N/2 \rfloor + 1$$
+| N | Quorum | Failures tolerated |
+|---|---|---|
+| 3 | 2 | 1 |
+| 5 | 3 | 2 |
+| 7 | 4 | 3 |
+
+**Why it works:** any two majorities **overlap** in ≥1 node → a new leader's majority saw the last write (no loss), and only **one** leader can win (no split-brain). Use **odd** sizes (3/5/7).
+
+### Raft (built for understandability)
+- **Roles:** Follower / Candidate / Leader; time split into **terms** (≤1 leader each).
+- **Election:** on timeout a follower becomes Candidate, requests votes; **majority** → Leader. Randomized timeouts avoid split votes.
+- **Log replication:** writes → leader → `AppendEntries` → committed once a **majority** ack.
+- **Safety:** only an up-to-date candidate can win → committed entries never overwritten.
+- Used by: **etcd, Consul, CockroachDB, TiKV**.
+
+### Paxos (the original, harder)
+- **Roles:** Proposer / Acceptor / Learner. Basic Paxos = 2 phases:
+  1. **Prepare/Promise:** proposer's number `n` gets a majority promise.
+  2. **Accept/Accepted:** majority accepts value → **chosen**.
+- **Multi-Paxos** chains it into a log with a stable leader. Used by: **Chubby, Spanner, Cassandra LWT**.
+
+### Raft vs Paxos
+| | Raft | Paxos |
+|---|---|---|
+| Design | Understandable, prescriptive | Theoretical, flexible |
+| Leader | Strong, explicit | Optional (Multi-Paxos) |
+| Adoption | etcd, Consul, CockroachDB | Chubby, Spanner |
+
+Both need a **majority quorum**, tolerate `⌊N/2⌋` failures, are **CP** (halt writes if majority unreachable).
+
+**Rule:** Both agree via a **majority quorum**; overlapping majorities → one leader, no lost data — at the cost of halting writes when a majority is unreachable.
+
+>  Consensus makes a cluster agree on one ordered log by requiring a majority quorum; because any two majorities overlap, exactly one leader can win and no committed entry is ever lost, at the price of halting writes when a majority is unreachable.
+
+---
+
+## Q: Is Raft a different thing altogether (vs Paxos)?
+
+**No — Raft solves the same problem as Paxos.** An alternative **consensus algorithm**: "replicas agree on an ordered log via majority quorum."
+
+- Both: **leader + majority quorum**, tolerate `⌊N/2⌋` failures, **CP**, no split-brain/data loss.
+- **Interchangeable:** Spanner uses **Paxos** per shard; CockroachDB/TiDB use **Raft** per shard.
+
+### Why Raft exists
+Paxos is hard to understand/implement. Raft (2014) = *"consensus made understandable"* — same guarantees, clearer structure.
+
+| | Paxos | Raft |
+|---|---|---|
+| Philosophy | Theoretical, flexible | Practical, prescriptive |
+| Leader | Optional (Multi-Paxos adds one) | Strong, explicit from start |
+| Structure | One abstract primitive | Split: election + log replication + safety |
+| Used by | Chubby, Spanner, Cassandra LWT | etcd, Consul, CockroachDB, TiKV |
+
+### Mental grouping
+- **{Paxos, Raft} = consensus** (majority, fault-tolerant, replicas of *same* data).
+- **2PC = atomic commit** (unanimous, blocking, *different* resources) — the odd one out.
+
+**Rule:** Raft ≠ new category — a **friendlier Paxos**. Anywhere Paxos fits (Spanner shards), Raft can replace it (CockroachDB).
+
+>  Raft isn't a new category — it's a more understandable Paxos solving the identical problem (majority-quorum agreement over a replicated log); the real conceptual split is consensus (Raft/Paxos, majority, same data) versus 2PC (unanimous, blocking, different resources).
+
+---
+
+## Q: Are quorum read/write and Raft the same thing?
+
+They **share the same underlying idea (overlapping quorums)** but are **two different mechanisms operating at different layers** — one leaderless, one leader-based.
+
+### Two separate mechanisms
+| | Quorum R/W (Dynamo-style) | Raft |
+|---|---|---|
+| Category | **Leaderless** replication | **Leader-based** consensus |
+| Coordinator | None — client writes to W nodes, reads from R | Single **leader** orders all writes |
+| Quorum meaning | Tunable **W** and **R**, need `W + R > N` | Fixed **majority** (⌊N/2⌋+1) |
+| Ordering | **No total order** (conflicts possible) | **Total order** (single log) |
+| Conflicts | LWW / version vectors / CRDTs | Impossible — leader serializes |
+| Result | Overlap → **strong-ish** | Overlap **+ ordering** → **linearizable** |
+| Examples | Cassandra, DynamoDB, Riak | etcd, CockroachDB, Spanner, Consul |
+
+### The shared foundation
+Both rely on **"any two quorums intersect"**:
+$$W + R > N \;\text{(Dynamo)} \qquad \text{majority} + \text{majority} \;\text{(Raft)}$$
+That overlap is what guarantees a read can never miss the latest write.
+
+### The difference: ordering
+- **Quorum R/W alone** = overlap **without** ordering → two concurrent writes to the same key produce conflicting versions that get reconciled later (LWW / vector clocks / CRDTs). Not linearizable on its own.
+- **Raft** adds a **leader-imposed total order** *before* the majority commits → no conflicts can exist → true linearizability.
+
+### How they relate
+- Quorum R/W is a **standalone replication strategy** — it runs with **no consensus algorithm at all** (Cassandra has no Raft leader).
+- Raft **internally uses a majority quorum** for log replication, but wraps it with leader election + log ordering; reads get freshness via **ReadIndex/leader lease**, not a tunable `R`.
+- They're **alternative points on the spectrum**, not layers you stack: pick **leaderless quorum** for availability + tunable consistency, or **Raft/Paxos** for a single ordered, linearizable history.
+
+**Rule:** Same quorum math, different machinery — **quorum R/W = leaderless overlap** (strong-ish, tunable, conflicts possible) vs **Raft = leader + majority + total order** (linearizable). Choose one; you don't combine them.
+
+> Quorum read/write and Raft are separate mechanisms that both exploit the same overlapping-quorum math. Quorum R/W is leaderless replication giving overlap without ordering (strong-ish, conflicts possible); Raft is leader-based consensus that uses a majority quorum plus a total order to give true linearizability. You pick one approach or the other — you don't stack them.
+
+---
+
+## Q: Which DBs use Quorum R/W vs Raft vs Paxos?
+
+
+### Quorum Read/Write (leaderless, Dynamo-style)
+- **Amazon DynamoDB** (the original Dynamo lineage)
+- **Apache Cassandra**
+- **ScyllaDB** (Cassandra-compatible)
+- **Riak**
+- **Voldemort** (LinkedIn, now retired)
+- **Aerospike**
+> By default writes propagate to replicas asynchronously (eventual consistency), but tuning W + R > N (e.g. QUORUM reads + writes) forces enough replicas to overlap synchronously, giving strong consistency.
+
+> Configuration: The main configuration knobs are the replication factor N, the write quorum W, and the read quorum R. By adjusting W and R, we trade off consistency, latency, and availability. If we need strong quorum-based reads, we configure them so that W + R > N, ensuring every read quorum intersects every completed write quorum. For write-heavy or read-heavy workloads, we can bias the configuration by choosing a smaller W or a smaller R respectively, as long as the required consistency guarantees are met.
+
+| Configuration                     |  N |  W |  R | `W + R > N` |
+| --------------------------------- | -: | -: | -: | :---------: |
+| Highest Availability              |  3 |  1 |  1 |      ❌      |
+| Balanced / Strong Consistency     |  3 |  2 |  2 |      ✅      |
+| **Write-optimized** (Fast Writes) |  3 |  1 |  3 |      ✅      |
+| **Read-optimized** (Fast Reads)   |  3 |  3 |  1 |      ✅      |
+
+
+### Raft (leader-based consensus)
+- **etcd** (backs Kubernetes)
+- **Consul** (HashiCorp)
+- **CockroachDB** (Raft per range)
+- **TiDB / TiKV**
+- **YugabyteDB**
+- **RethinkDB**
+- **MongoDB** (Raft-*like* election protocol for replica sets)
+- **Redis Raft** (module) / **RabbitMQ** quorum queues
+> With Raft-powered DBs you get strong consistency out of the box, so there's no forced eventual consistency — but you can still opt into stale reads (follower/bounded-staleness reads, async cross-region replicas) when you want lower latency, and cross-shard reads need an extra ordering layer(2PC) to stay globally consistent.
+
+> Raft within shards + 2PC across shards gives cross-region strong consistency (that's literally Spanner/CockroachDB), but you pay in WAN latency, longer lock windows, lower availability under partition, and complexity — so minimize it with geo-partitioning so most transactions stay single-region.
+
+### Paxos (the other consensus family)
+- **Google Spanner** (Paxos per shard)
+- **Google Chubby**
+- **Apache ZooKeeper** (ZAB — a Paxos-like protocol)
+- **Cassandra LWT** (`IF NOT EXISTS` lightweight transactions use Paxos)
+
+**Rule:** *Dynamo family = quorum R/W (Cassandra, DynamoDB, Riak); coordination + distributed SQL = Raft (etcd, Consul, CockroachDB); Google stack = Paxos (Spanner, Chubby, ZooKeeper).*
+
+> [Note!] Raft and Paxos are generic distributed-systems consensus algorithms, not specifically SQL or NoSQL techniques. They provide agreement and ordering of operations across replicas and are commonly used to build strongly consistent replicated databases. Quorum reads/writes are also generic: with N replicas, W write replicas, and R read replicas, W + R > N guarantees that the read and write sets overlap. For example, N=3, W=2, R=2 gives quorum intersection and can support strong consistency when combined with an appropriate replication/versioning protocol.
+
+> However, quorum is not the same as consensus. Quorum primarily guarantees replica-set overlap; it doesn't by itself determine a single global ordering or resolve all concurrent-write/failure scenarios. Raft/Paxos explicitly provide consensus—agreement on one ordered sequence of operations—which can then be used to implement strong consistency. So the mental model is: Raft/Paxos → agreement + ordering → strong consistency; Quorum → replica overlap → can support strong consistency depending on the surrounding protocol.
+
+---
+
+## Q. How Quorum failures are handled?
+
+You resolve them by adding extra mechanisms on top of quorum. Quorum gives you the replica overlap, but the database needs a way to decide which version wins and how replicas recover.
+
+For concurrent writes, common approaches are version numbers/timestamps, logical clocks, or deterministic conflict-resolution rules. For example, with N=3, W=2, two clients might write x=10 and x=20. The system attaches versions such as (timestamp, node_id) and deterministically chooses the higher version, or uses application-specific conflict resolution. For failures, replicas use read repair, hinted handoff, anti-entropy/repair, and version reconciliation to bring divergent replicas back together. Some systems use last-write-wins, others use CRDTs or application-level merging. So quorum can provide strong-ish guarantees depending on these additional rules, but if you need one authoritative global ordering of every operation, you generally introduce consensus (Raft/Paxos) rather than trying to construct that ordering from quorum alone.
+
+### 1. Read Repair
+
+A client reads from multiple replicas:
+
+```text
+Read x from A, B, C
+
+A → x=10
+B → x=10
+C → x=5   ← stale
+```
+
+The coordinator sees that `C` is stale and **repairs C during/after the read**:
+
+```text
+C ← x=10
+```
+
+So the next read is more likely to get consistent data.
+
+**Idea:** Reading detects stale replicas and fixes them.
+
+---
+
+### 2. Hinted Handoff
+
+Suppose replica `C` is temporarily down when we write:
+
+```text
+Write x=10
+
+A → success
+B → success
+C → DOWN
+```
+
+Instead of losing the update, another node (say `D`) temporarily stores it **on behalf of C**:
+
+```text
+D:
+"Hint: when C comes back, give C x=10"
+```
+
+When C recovers:
+
+```text
+D → C: x=10
+```
+
+Then the hint is deleted.
+
+**Idea:** If a replica is temporarily unavailable, another node temporarily holds its updates.
+
+---
+
+### 3. Anti-Entropy / Repair
+
+This is a **background process** that periodically compares replicas and synchronizes differences.
+
+For example:
+
+```text
+A: x=10, y=20, z=30
+B: x=10, y=15, z=30
+```
+
+The system detects:
+
+```text
+y: 20 vs 15
+```
+
+and repairs B:
+
+```text
+B: x=10, y=20, z=30
+```
+
+Systems often use structures such as **Merkle trees** to compare large datasets efficiently instead of comparing every record.
+
+**Idea:** Periodically scan/compare replicas and repair any inconsistencies.
+
+### Easy way to remember
+
+| Mechanism               | When?                            | Purpose                                  |
+| ----------------------- | -------------------------------- | ---------------------------------------- |
+| **Read repair**         | During a read                    | Fix stale replica discovered during read |
+| **Hinted handoff**      | When replica is temporarily down | Store its missed write elsewhere         |
+| **Anti-entropy/repair** | Periodically in background       | Find and fix replica divergence          |
+
+**In short:**
+**Read repair = fix while reading.**
+**Hinted handoff = hold while replica is down.**
+**Anti-entropy = periodically reconcile replicas.**
+
+
 ## Q: How are Linearizability and Distributed Transactions (2PC/3PC) achieved?
 
 ### Strong Consistency / Linearizability
@@ -307,160 +488,6 @@ Payment fails → run compensations for steps 2 & 1.
 
 ---
 
-## Q: What to use in production for strong consistency?
-
-Don't hand-roll Paxos — pick proven tech and configure it.
-
-### Coordination / metadata (consensus backbone)
-- **etcd** (Raft, backs Kubernetes), **ZooKeeper** (ZAB), **Consul** (Raft) — leader election, locks, config, service discovery. Small critical state, not bulk data.
-
-### Strongly-consistent databases
-- **Spanner** — global strong consistency via **TrueTime** (gold standard).
-- **CockroachDB / YugabyteDB** — open-source Spanner-like, Raft per range, serializable SQL.
-- **PostgreSQL / MySQL** — single-node ACID; scale via **synchronous replication**.
-
-### Tunable-consistency DBs (configure for strong)
-- **DynamoDB:** `ConsistentRead=true`; Transactions API for ACID.
-- **Cassandra:** **`QUORUM` read + write (W+R>N)** → strong; `LOCAL_QUORUM` per region.
-- **MongoDB:** `writeConcern: majority` + `readConcern: majority/linearizable`, read from primary.
-
-### Decision guide
-| Need | Use |
-|---|---|
-| Locks / leader election / config | etcd / ZooKeeper / Consul |
-| Global-scale SQL + strong | Spanner / CockroachDB |
-| Single-region ACID | PostgreSQL/MySQL (sync replication) |
-| KV at scale, strong reads | DynamoDB (`ConsistentRead`) |
-| Wide-column, tunable | Cassandra (`QUORUM`) |
-| Document store | MongoDB (`majority`) |
-
-### Practical guidance
-- Strong consistency **only on critical paths** (payments, inventory, balances, uniqueness); eventual elsewhere.
-- Helpers: **single-writer/leader per entity, idempotency keys, optimistic concurrency (version/CAS), outbox + transactions**.
-
-**Rule:** **etcd/ZooKeeper** for coordination, **Spanner/CockroachDB** for strong SQL at scale, or **tune quorums** (Cassandra QUORUM, DynamoDB ConsistentRead, Mongo majority) — applied **selectively**.
-
->  In practice you don't implement consensus yourself — use etcd/ZooKeeper for coordination, Spanner/CockroachDB for strong SQL at scale, or tune quorums on Cassandra/DynamoDB/Mongo — and reserve strong consistency for the critical paths that truly need it.
-
----
-
-## Q: How do you achieve strong consistency? (simple)
-
-**One line:** Funnel all writes through a **single agreed order** and make every read see a **majority** → a read can never miss the latest write.
-
-### 3 core mechanisms
-1. **Single leader:** all writes ordered → no conflicting concurrent writes.
-2. **Majority quorum (Raft/Paxos):** commit only after a majority stores it; reads consult a majority → **W + R > N** overlap.
-3. **Synchronous replication:** ack only **after** replicas persist — never from one node's memory.
-
-### Safety nets
-- **Leader leases / fencing** → no stale leader serving (no split-brain).
-- **Synchronized clocks (Spanner TrueTime)** → global strong consistency.
-
-**Trade-off:** coordination round-trip → **higher latency**; minority refuses to serve under partition (CP).
-
-**Mental model:** *one leader + majority agreement + don't ack until replicated.*
-
->  The essence of strong consistency is one leader ordering all writes, a majority persisting each write before it's acknowledged, and reads consulting a majority so they can never miss the latest write — paid for with a coordination round-trip of latency.
-
----
-
-## Q: Explain Raft and Paxos quorum.
-
-**Consensus** = a cluster agrees on a single ordered log despite failures. **Majority quorum** makes it safe.
-
-### Quorum — the foundation
-$$\text{quorum} = \lfloor N/2 \rfloor + 1$$
-| N | Quorum | Failures tolerated |
-|---|---|---|
-| 3 | 2 | 1 |
-| 5 | 3 | 2 |
-| 7 | 4 | 3 |
-
-**Why it works:** any two majorities **overlap** in ≥1 node → a new leader's majority saw the last write (no loss), and only **one** leader can win (no split-brain). Use **odd** sizes (3/5/7).
-
-### Raft (built for understandability)
-- **Roles:** Follower / Candidate / Leader; time split into **terms** (≤1 leader each).
-- **Election:** on timeout a follower becomes Candidate, requests votes; **majority** → Leader. Randomized timeouts avoid split votes.
-- **Log replication:** writes → leader → `AppendEntries` → committed once a **majority** ack.
-- **Safety:** only an up-to-date candidate can win → committed entries never overwritten.
-- Used by: **etcd, Consul, CockroachDB, TiKV**.
-
-### Paxos (the original, harder)
-- **Roles:** Proposer / Acceptor / Learner. Basic Paxos = 2 phases:
-  1. **Prepare/Promise:** proposer's number `n` gets a majority promise.
-  2. **Accept/Accepted:** majority accepts value → **chosen**.
-- **Multi-Paxos** chains it into a log with a stable leader. Used by: **Chubby, Spanner, Cassandra LWT**.
-
-### Raft vs Paxos
-| | Raft | Paxos |
-|---|---|---|
-| Design | Understandable, prescriptive | Theoretical, flexible |
-| Leader | Strong, explicit | Optional (Multi-Paxos) |
-| Adoption | etcd, Consul, CockroachDB | Chubby, Spanner |
-
-Both need a **majority quorum**, tolerate `⌊N/2⌋` failures, are **CP** (halt writes if majority unreachable).
-
-**Rule:** Both agree via a **majority quorum**; overlapping majorities → one leader, no lost data — at the cost of halting writes when a majority is unreachable.
-
->  Consensus makes a cluster agree on one ordered log by requiring a majority quorum; because any two majorities overlap, exactly one leader can win and no committed entry is ever lost, at the price of halting writes when a majority is unreachable.
-
----
-
-## Q: How does Spanner combine 2PC + Paxos? (removing 2PC's SPOF)
-
-**Layering:** Paxos solves "don't lose a node," 2PC solves "commit atomically across shards."
-
-### The structure
-- Data split into **shards**; each shard is replicated across 3–5 machines as a **Paxos group** (1 leader + followers).
-```
-        2PC  ← atomicity ACROSS shards (horizontal)
-       /    \
-  Shard A   Shard B
-    |          |
-  Paxos     Paxos   ← HA/durability WITHIN each shard (vertical)
- (A1,A2,A3)(B1,B2,B3)
-```
-- **Paxos (vertical):** keeps each shard alive/consistent despite machine failures.
-- **2PC (horizontal):** glues shard leaders for atomic multi-shard transactions.
-
-### Why it kills 2PC's blocking weakness
-- **Plain 2PC:** participant = one server; crash after "yes" → everyone stuck holding locks.
-- **Spanner:** each participant is a **whole Paxos group**. Leader (A1) dies mid-commit → **Paxos promotes A2** (has the replicated prepare/commit log) → resumes the 2PC. No single death blocks it → **SPOF gone**.
-
-**Rule:** **Paxos makes each participant fault-tolerant; 2PC makes the transaction atomic** → atomic *and* highly-available distributed transactions.
-
->  Spanner removes 2PC's blocking SPOF by making every transaction participant a Paxos group rather than a single server — Paxos keeps each shard alive (vertical), 2PC glues shard leaders for atomic multi-shard commits (horizontal), so a leader crash mid-commit is just a fast re-election.
-
----
-
-## Q: Is Raft a different thing altogether (vs Paxos)?
-
-**No — Raft solves the same problem as Paxos.** An alternative **consensus algorithm**: "replicas agree on an ordered log via majority quorum."
-
-- Both: **leader + majority quorum**, tolerate `⌊N/2⌋` failures, **CP**, no split-brain/data loss.
-- **Interchangeable:** Spanner uses **Paxos** per shard; CockroachDB/TiDB use **Raft** per shard.
-
-### Why Raft exists
-Paxos is hard to understand/implement. Raft (2014) = *"consensus made understandable"* — same guarantees, clearer structure.
-
-| | Paxos | Raft |
-|---|---|---|
-| Philosophy | Theoretical, flexible | Practical, prescriptive |
-| Leader | Optional (Multi-Paxos adds one) | Strong, explicit from start |
-| Structure | One abstract primitive | Split: election + log replication + safety |
-| Used by | Chubby, Spanner, Cassandra LWT | etcd, Consul, CockroachDB, TiKV |
-
-### Mental grouping
-- **{Paxos, Raft} = consensus** (majority, fault-tolerant, replicas of *same* data).
-- **2PC = atomic commit** (unanimous, blocking, *different* resources) — the odd one out.
-
-**Rule:** Raft ≠ new category — a **friendlier Paxos**. Anywhere Paxos fits (Spanner shards), Raft can replace it (CockroachDB).
-
->  Raft isn't a new category — it's a more understandable Paxos solving the identical problem (majority-quorum agreement over a replicated log); the real conceptual split is consensus (Raft/Paxos, majority, same data) versus 2PC (unanimous, blocking, different resources).
-
----
-
 ## Q: How to achieve BOTH high availability and high consistency? (practical mechanisms)
 
 Partitions are rare/brief → goal = **strong consistency + HA in the common case**, degrade only the minority side during a real partition.
@@ -509,6 +536,190 @@ $$\text{Raft} + \text{leader reads via ReadIndex/lease} = \textbf{linearizable (
 Strong consistency isn't guaranteed by where the read is served — it's guaranteed by the follower synchronizing its apply progress to a leader-verified commit point first. The leader still anchors correctness (it certifies "I'm leader, here's the committed index"); the follower just serves the bytes once it's provably caught up.
 
 > A partition does not change Raft membership or create a replacement node. The majority elects a new leader, while the unreachable node remains one of the configured members. When the old node reconnects, it sees the newer term, becomes a follower, discards conflicting uncommitted entries, and catches up from the leader. If it was explicitly replaced, the old node cannot rejoin as a voter.
+
+---
+
+## Q: What to use in production for strong consistency?
+
+Don't hand-roll Paxos — pick proven tech and configure it.
+
+### Coordination / metadata (consensus backbone)
+- **etcd** (Raft, backs Kubernetes), **ZooKeeper** (ZAB), **Consul** (Raft) — leader election, locks, config, service discovery. Small critical state, not bulk data.
+
+### Strongly-consistent databases
+- **Spanner** — global strong consistency via **TrueTime** (gold standard).
+- **CockroachDB / YugabyteDB** — open-source Spanner-like, Raft per range, serializable SQL.
+- **PostgreSQL / MySQL** — single-node ACID; scale via **synchronous replication**.
+
+### Tunable-consistency DBs (configure for strong)
+- **DynamoDB:** `ConsistentRead=true`; Transactions API for ACID.
+- **Cassandra:** **`QUORUM` read + write (W+R>N)** → strong; `LOCAL_QUORUM` per region.
+- **MongoDB:** `writeConcern: majority` + `readConcern: majority/linearizable`, read from primary.
+
+### Decision guide
+| Need | Use |
+|---|---|
+| Locks / leader election / config | etcd / ZooKeeper / Consul |
+| Global-scale SQL + strong | Spanner / CockroachDB |
+| Single-region ACID | PostgreSQL/MySQL (sync replication) |
+| KV at scale, strong reads | DynamoDB (`ConsistentRead`) |
+| Wide-column, tunable | Cassandra (`QUORUM`) |
+| Document store | MongoDB (`majority`) |
+
+### Practical guidance
+- Strong consistency **only on critical paths** (payments, inventory, balances, uniqueness); eventual elsewhere.
+- Helpers: **single-writer/leader per entity, idempotency keys, optimistic concurrency (version/CAS), outbox + transactions**.
+
+**Rule:** **etcd/ZooKeeper** for coordination, **Spanner/CockroachDB** for strong SQL at scale, or **tune quorums** (Cassandra QUORUM, DynamoDB ConsistentRead, Mongo majority) — applied **selectively**.
+
+>  In practice you don't implement consensus yourself — use etcd/ZooKeeper for coordination, Spanner/CockroachDB for strong SQL at scale, or tune quorums on Cassandra/DynamoDB/Mongo — and reserve strong consistency for the critical paths that truly need it.
+
+---
+
+## Q: Do Spanner / CockroachDB use Raft/Paxos + 2PC/3PC for strong consistency?
+
+**Yes — a layered combination, but NOT 3PC** (3PC is largely theoretical, not used in production).
+
+### Two distinct layers
+1. **Replication / consensus (per shard/range)** → keeps replicas of a single data range consistent:
+   - Spanner → **Paxos**
+   - CockroachDB → **Raft**
+2. **Distributed transactions (across shards/ranges)** → **2PC** coordinates atomic commit spanning multiple consensus groups.
+
+### Ordering / isolation layer (the key differentiator)
+- Spanner → **TrueTime** (GPS + atomic clocks) → external consistency / linearizability.
+- CockroachDB → **Hybrid Logical Clocks (HLC)** → order transactions without special hardware.
+
+| Layer | Purpose | Spanner | CockroachDB |
+|---|---|---|---|
+| Replica agreement | Keep a shard's replicas consistent | Paxos | Raft |
+| Cross-shard atomicity | Atomic multi-shard commit | 2PC | 2PC (Parallel Commits) |
+| Global ordering | Serializable / linearizable order | TrueTime | HLC |
+
+**Rule:** **Paxos/Raft** for replica agreement, **2PC** for cross-shard atomicity, **TrueTime/HLC** for global ordering — CockroachDB also uses **Parallel Commits** to shave a 2PC round-trip.
+
+>  Correct in spirit: both layer consensus (Paxos in Spanner, Raft in CockroachDB) for per-shard replica agreement with 2PC for cross-shard atomicity, plus a clock layer (TrueTime vs HLC) for global ordering — but nobody uses 3PC in production, and CockroachDB optimizes 2PC with Parallel Commits.
+
+---
+
+## Q: How does Spanner combine 2PC + Paxos? (removing 2PC's SPOF)
+
+**Layering:** Paxos solves "don't lose a node," 2PC solves "commit atomically across shards."
+
+### The structure
+- Data split into **shards**; each shard is replicated across 3–5 machines as a **Paxos group** (1 leader + followers).
+```
+        2PC  ← atomicity ACROSS shards (horizontal)
+       /    \
+  Shard A   Shard B
+    |          |
+  Paxos     Paxos   ← HA/durability WITHIN each shard (vertical)
+ (A1,A2,A3)(B1,B2,B3)
+```
+- **Paxos (vertical):** keeps each shard alive/consistent despite machine failures.
+- **2PC (horizontal):** glues shard leaders for atomic multi-shard transactions.
+
+### Why it kills 2PC's blocking weakness
+- **Plain 2PC:** participant = one server; crash after "yes" → everyone stuck holding locks.
+- **Spanner:** each participant is a **whole Paxos group**. Leader (A1) dies mid-commit → **Paxos promotes A2** (has the replicated prepare/commit log) → resumes the 2PC. No single death blocks it → **SPOF gone**.
+
+**Rule:** **Paxos makes each participant fault-tolerant; 2PC makes the transaction atomic** → atomic *and* highly-available distributed transactions.
+
+>  Spanner removes 2PC's blocking SPOF by making every transaction participant a Paxos group rather than a single server — Paxos keeps each shard alive (vertical), 2PC glues shard leaders for atomic multi-shard commits (horizontal), so a leader crash mid-commit is just a fast re-election.
+
+---
+
+## Q: Consistency in SQL?
+
+- Distributed consistency (multi-node SQL)
+
+Single-node ACID relies on the above; across nodes SQL engines add:
+
+Synchronous replication — commit only after replica(s) persist.
+2PC — atomic commit across shards/databases.
+Consensus (Raft/Paxos) — in distributed SQL (Spanner, CockroachDB) for a single ordered, linearizable log.
+
+> SQL guarantees consistency by wrapping work in ACID transactions — enforcing constraints, isolating concurrent access via locking or MVCC, and using a write-ahead log for crash recovery — so the database only ever transitions between valid states.
+
+--- 
+
+## Quick Revision: B+ Trees, InnoDB vs PostgreSQL
+
+### 1. B+ Tree Basics
+
+| Concept                         | Explanation                                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Every index is a B+ Tree**    | Each `CREATE INDEX` creates a separate B+ Tree.                                                       |
+| **Why separate trees?**         | Each index is sorted on a different column(s). One tree cannot be sorted by both `name` and `salary`. |
+| **One table, multiple indexes** | 1 table + 3 indexes = 3 independent B+ Trees.                                                         |
+| **Leaf nodes**                  | Contain the information needed to fetch the row (actual row or pointer, depending on the database).   |
+| **Internal nodes**              | Store only keys and child pointers for navigation.                                                    |
+
+---
+
+### 2. MySQL (InnoDB) vs PostgreSQL
+
+| Feature                    | MySQL (InnoDB)                              | PostgreSQL                                    |
+| -------------------------- | ------------------------------------------- | --------------------------------------------- |
+| Table Storage              | **Clustered B+ Tree**                       | **Heap (separate table)**                     |
+| Primary Key                | Clustered Index                             | Regular B+ Tree Index                         |
+| Primary Key Leaf Nodes     | **Actual rows**                             | **TID (pointer to heap row)**                 |
+| Secondary Index Leaf Nodes | Indexed key + **Primary Key**               | Indexed key + **TID**                         |
+| Row Lookup                 | Secondary Index → Primary Key B+ Tree → Row | Index → Heap → Row                            |
+| Heap                       | ❌ No (table is the clustered index)         | ✅ Yes                                         |
+| Clustered Index            | ✅ Yes                                       | ❌ No (only `CLUSTER` command, not maintained) |
+
+---
+
+### 3. Secondary Index Lookup
+
+| MySQL (InnoDB)                                                   | PostgreSQL                      |
+| ---------------------------------------------------------------- | ------------------------------- |
+| Secondary Index → Primary Key → Primary Key B+ Tree → Actual Row | Index → TID → Heap → Actual Row |
+
+---
+
+### 4. SQL Example
+
+```sql
+CREATE TABLE Employees (
+    id INT PRIMARY KEY,
+    name VARCHAR(100),
+    salary INT
+);
+
+CREATE INDEX idx_name ON Employees(name);
+
+CREATE INDEX idx_salary ON Employees(salary);
+```
+
+Internally:
+
+* **Primary Key** → One B+ Tree
+* **idx_name** → Another B+ Tree
+* **idx_salary** → Another B+ Tree
+
+Each is **independent** and sorted by its own key.
+
+---
+
+### 5. Interview One-liners
+
+| Topic                        | One-liner                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| B+ Tree                      | Internal nodes store only keys; leaf nodes store the actual row or a pointer to it.            |
+| Every index                  | Every index is implemented as its own B+ Tree.                                                 |
+| InnoDB                       | The clustered B+ Tree **is the table**; leaf nodes contain the full rows.                      |
+| PostgreSQL                   | The table is a heap; B+ Tree leaf nodes contain a **Tuple ID (TID)** pointing to the heap row. |
+| Secondary Index (InnoDB)     | Leaf nodes store the indexed key and the **primary key** of the row.                           |
+| Secondary Index (PostgreSQL) | Leaf nodes store the indexed key and the **TID** of the row.                                   |
+
+### Memory Trick
+
+| Database       | Think of it as...                      |
+| -------------- | -------------------------------------- |
+| **InnoDB**     | **B+ Tree = Table**                    |
+| **PostgreSQL** | **Heap = Table, B+ Tree = Lookup Map** |
 
 ---
 
@@ -621,206 +832,6 @@ Write-heavy + HA + horizontal scale + **known query patterns**: time-series/IoT/
 
 ---
 
-## Q: Do Spanner / CockroachDB use Raft/Paxos + 2PC/3PC for strong consistency?
-
-**Yes — a layered combination, but NOT 3PC** (3PC is largely theoretical, not used in production).
-
-### Two distinct layers
-1. **Replication / consensus (per shard/range)** → keeps replicas of a single data range consistent:
-   - Spanner → **Paxos**
-   - CockroachDB → **Raft**
-2. **Distributed transactions (across shards/ranges)** → **2PC** coordinates atomic commit spanning multiple consensus groups.
-
-### Ordering / isolation layer (the key differentiator)
-- Spanner → **TrueTime** (GPS + atomic clocks) → external consistency / linearizability.
-- CockroachDB → **Hybrid Logical Clocks (HLC)** → order transactions without special hardware.
-
-| Layer | Purpose | Spanner | CockroachDB |
-|---|---|---|---|
-| Replica agreement | Keep a shard's replicas consistent | Paxos | Raft |
-| Cross-shard atomicity | Atomic multi-shard commit | 2PC | 2PC (Parallel Commits) |
-| Global ordering | Serializable / linearizable order | TrueTime | HLC |
-
-**Rule:** **Paxos/Raft** for replica agreement, **2PC** for cross-shard atomicity, **TrueTime/HLC** for global ordering — CockroachDB also uses **Parallel Commits** to shave a 2PC round-trip.
-
->  Correct in spirit: both layer consensus (Paxos in Spanner, Raft in CockroachDB) for per-shard replica agreement with 2PC for cross-shard atomicity, plus a clock layer (TrueTime vs HLC) for global ordering — but nobody uses 3PC in production, and CockroachDB optimizes 2PC with Parallel Commits.
-
----
-
-## Q: Consistency in SQL?
-
-- Distributed consistency (multi-node SQL)
-
-Single-node ACID relies on the above; across nodes SQL engines add:
-
-Synchronous replication — commit only after replica(s) persist.
-2PC — atomic commit across shards/databases.
-Consensus (Raft/Paxos) — in distributed SQL (Spanner, CockroachDB) for a single ordered, linearizable log.
-
-> SQL guarantees consistency by wrapping work in ACID transactions — enforcing constraints, isolating concurrent access via locking or MVCC, and using a write-ahead log for crash recovery — so the database only ever transitions between valid states.
-
---- 
-
-## Quick Revision: B+ Trees, InnoDB vs PostgreSQL
-
-### 1. B+ Tree Basics
-
-| Concept                         | Explanation                                                                                           |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Every index is a B+ Tree**    | Each `CREATE INDEX` creates a separate B+ Tree.                                                       |
-| **Why separate trees?**         | Each index is sorted on a different column(s). One tree cannot be sorted by both `name` and `salary`. |
-| **One table, multiple indexes** | 1 table + 3 indexes = 3 independent B+ Trees.                                                         |
-| **Leaf nodes**                  | Contain the information needed to fetch the row (actual row or pointer, depending on the database).   |
-| **Internal nodes**              | Store only keys and child pointers for navigation.                                                    |
-
----
-
-### 2. MySQL (InnoDB) vs PostgreSQL
-
-| Feature                    | MySQL (InnoDB)                              | PostgreSQL                                    |
-| -------------------------- | ------------------------------------------- | --------------------------------------------- |
-| Table Storage              | **Clustered B+ Tree**                       | **Heap (separate table)**                     |
-| Primary Key                | Clustered Index                             | Regular B+ Tree Index                         |
-| Primary Key Leaf Nodes     | **Actual rows**                             | **TID (pointer to heap row)**                 |
-| Secondary Index Leaf Nodes | Indexed key + **Primary Key**               | Indexed key + **TID**                         |
-| Row Lookup                 | Secondary Index → Primary Key B+ Tree → Row | Index → Heap → Row                            |
-| Heap                       | ❌ No (table is the clustered index)         | ✅ Yes                                         |
-| Clustered Index            | ✅ Yes                                       | ❌ No (only `CLUSTER` command, not maintained) |
-
----
-
-### 3. Secondary Index Lookup
-
-| MySQL (InnoDB)                                                   | PostgreSQL                      |
-| ---------------------------------------------------------------- | ------------------------------- |
-| Secondary Index → Primary Key → Primary Key B+ Tree → Actual Row | Index → TID → Heap → Actual Row |
-
----
-
-### 4. SQL Example
-
-```sql
-CREATE TABLE Employees (
-    id INT PRIMARY KEY,
-    name VARCHAR(100),
-    salary INT
-);
-
-CREATE INDEX idx_name ON Employees(name);
-
-CREATE INDEX idx_salary ON Employees(salary);
-```
-
-Internally:
-
-* **Primary Key** → One B+ Tree
-* **idx_name** → Another B+ Tree
-* **idx_salary** → Another B+ Tree
-
-Each is **independent** and sorted by its own key.
-
----
-
-### 5. Interview One-liners
-
-| Topic                        | One-liner                                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| B+ Tree                      | Internal nodes store only keys; leaf nodes store the actual row or a pointer to it.            |
-| Every index                  | Every index is implemented as its own B+ Tree.                                                 |
-| InnoDB                       | The clustered B+ Tree **is the table**; leaf nodes contain the full rows.                      |
-| PostgreSQL                   | The table is a heap; B+ Tree leaf nodes contain a **Tuple ID (TID)** pointing to the heap row. |
-| Secondary Index (InnoDB)     | Leaf nodes store the indexed key and the **primary key** of the row.                           |
-| Secondary Index (PostgreSQL) | Leaf nodes store the indexed key and the **TID** of the row.                                   |
-
-### Memory Trick
-
-| Database       | Think of it as...                      |
-| -------------- | -------------------------------------- |
-| **InnoDB**     | **B+ Tree = Table**                    |
-| **PostgreSQL** | **Heap = Table, B+ Tree = Lookup Map** |
-
----
-
-## Q: Are quorum read/write and Raft the same thing?
-
-They **share the same underlying idea (overlapping quorums)** but are **two different mechanisms operating at different layers** — one leaderless, one leader-based.
-
-### Two separate mechanisms
-| | Quorum R/W (Dynamo-style) | Raft |
-|---|---|---|
-| Category | **Leaderless** replication | **Leader-based** consensus |
-| Coordinator | None — client writes to W nodes, reads from R | Single **leader** orders all writes |
-| Quorum meaning | Tunable **W** and **R**, need `W + R > N` | Fixed **majority** (⌊N/2⌋+1) |
-| Ordering | **No total order** (conflicts possible) | **Total order** (single log) |
-| Conflicts | LWW / version vectors / CRDTs | Impossible — leader serializes |
-| Result | Overlap → **strong-ish** | Overlap **+ ordering** → **linearizable** |
-| Examples | Cassandra, DynamoDB, Riak | etcd, CockroachDB, Spanner, Consul |
-
-### The shared foundation
-Both rely on **"any two quorums intersect"**:
-$$W + R > N \;\text{(Dynamo)} \qquad \text{majority} + \text{majority} \;\text{(Raft)}$$
-That overlap is what guarantees a read can never miss the latest write.
-
-### The difference: ordering
-- **Quorum R/W alone** = overlap **without** ordering → two concurrent writes to the same key produce conflicting versions that get reconciled later (LWW / vector clocks / CRDTs). Not linearizable on its own.
-- **Raft** adds a **leader-imposed total order** *before* the majority commits → no conflicts can exist → true linearizability.
-
-### How they relate
-- Quorum R/W is a **standalone replication strategy** — it runs with **no consensus algorithm at all** (Cassandra has no Raft leader).
-- Raft **internally uses a majority quorum** for log replication, but wraps it with leader election + log ordering; reads get freshness via **ReadIndex/leader lease**, not a tunable `R`.
-- They're **alternative points on the spectrum**, not layers you stack: pick **leaderless quorum** for availability + tunable consistency, or **Raft/Paxos** for a single ordered, linearizable history.
-
-**Rule:** Same quorum math, different machinery — **quorum R/W = leaderless overlap** (strong-ish, tunable, conflicts possible) vs **Raft = leader + majority + total order** (linearizable). Choose one; you don't combine them.
-
-> Quorum read/write and Raft are separate mechanisms that both exploit the same overlapping-quorum math. Quorum R/W is leaderless replication giving overlap without ordering (strong-ish, conflicts possible); Raft is leader-based consensus that uses a majority quorum plus a total order to give true linearizability. You pick one approach or the other — you don't stack them.
-
----
-
-## Q: Which DBs use Quorum R/W vs Raft vs Paxos?
-
-
-### Quorum Read/Write (leaderless, Dynamo-style)
-- **Amazon DynamoDB** (the original Dynamo lineage)
-- **Apache Cassandra**
-- **ScyllaDB** (Cassandra-compatible)
-- **Riak**
-- **Voldemort** (LinkedIn, now retired)
-- **Aerospike**
-> By default writes propagate to replicas asynchronously (eventual consistency), but tuning W + R > N (e.g. QUORUM reads + writes) forces enough replicas to overlap synchronously, giving strong consistency.
-
-> Configuration: The main configuration knobs are the replication factor N, the write quorum W, and the read quorum R. By adjusting W and R, we trade off consistency, latency, and availability. If we need strong quorum-based reads, we configure them so that W + R > N, ensuring every read quorum intersects every completed write quorum. For write-heavy or read-heavy workloads, we can bias the configuration by choosing a smaller W or a smaller R respectively, as long as the required consistency guarantees are met.
-
-| Configuration                     |  N |  W |  R | `W + R > N` |
-| --------------------------------- | -: | -: | -: | :---------: |
-| Highest Availability              |  3 |  1 |  1 |      ❌      |
-| Balanced / Strong Consistency     |  3 |  2 |  2 |      ✅      |
-| **Write-optimized** (Fast Writes) |  3 |  1 |  3 |      ✅      |
-| **Read-optimized** (Fast Reads)   |  3 |  3 |  1 |      ✅      |
-
-
-### Raft (leader-based consensus)
-- **etcd** (backs Kubernetes)
-- **Consul** (HashiCorp)
-- **CockroachDB** (Raft per range)
-- **TiDB / TiKV**
-- **YugabyteDB**
-- **RethinkDB**
-- **MongoDB** (Raft-*like* election protocol for replica sets)
-- **Redis Raft** (module) / **RabbitMQ** quorum queues
-> With Raft-powered DBs you get strong consistency out of the box, so there's no forced eventual consistency — but you can still opt into stale reads (follower/bounded-staleness reads, async cross-region replicas) when you want lower latency, and cross-shard reads need an extra ordering layer(2PC) to stay globally consistent.
-
-> Raft within shards + 2PC across shards gives cross-region strong consistency (that's literally Spanner/CockroachDB), but you pay in WAN latency, longer lock windows, lower availability under partition, and complexity — so minimize it with geo-partitioning so most transactions stay single-region.
-
-### Paxos (the other consensus family)
-- **Google Spanner** (Paxos per shard)
-- **Google Chubby**
-- **Apache ZooKeeper** (ZAB — a Paxos-like protocol)
-- **Cassandra LWT** (`IF NOT EXISTS` lightweight transactions use Paxos)
-
-**Rule:** *Dynamo family = quorum R/W (Cassandra, DynamoDB, Riak); coordination + distributed SQL = Raft (etcd, Consul, CockroachDB); Google stack = Paxos (Spanner, Chubby, ZooKeeper).*
-
----
-
 ## Q. Scaling Writes?
 
 **Scaling writes** in a distributed system is primarily about ensuring that incoming write requests are spread across multiple machines instead of overwhelming a single server. The first step is to choose a storage system that matches the workload—for example, a write-optimized distributed database such as Cassandra for high-ingestion workloads. Data is then horizontally partitioned (sharded) using a partition key so that different records are written to different nodes, allowing write throughput to grow simply by adding more machines to the cluster.
@@ -862,3 +873,98 @@ A good way to answer is:
 ### **2. Scaling Reads with Strong Consistency**
 
 > Serve reads from the **primary** or use **strongly consistent distributed databases** that rely on **synchronous replication, quorum reads/writes (`W + R > N`), or consensus protocols like Raft/Paxos**. This guarantees the latest committed data on every read but increases **read/write latency and coordination overhead**, reducing overall throughput compared to eventual consistency.
+
+---
+
+## Q: All that I need to know about Kafka
+
+**What it is:** Distributed, append-only **commit log** for streaming events. Producers write, consumers read by offset; messages stored durably and replayable. Decouples services, handles high throughput.
+
+### Core concepts
+- **Topic:** Named stream split into **partitions**.
+- **Partition:** Ordered append-only log. **Order guaranteed only within a partition.**
+- **Offset:** Sequential message ID in a partition (the bookmark).
+- **Producer:** Partition chosen by key hash (same key → same partition → ordered).
+- **Consumer group:** Each partition read by **exactly one** consumer in a group → parallelism = partition count.
+- **Broker:** A Kafka server; cluster = many brokers.
+- **Controller:** Metadata + leader election. Newer Kafka = **KRaft** (no ZooKeeper).
+
+### Replication & durability
+- Each partition: **leader** + **follower replicas** (`replication.factor`, usually 3).
+- **ISR (In-Sync Replicas):** replicas caught up to leader; new leader elected from ISR on failure.
+- `min.insync.replicas=2` + `acks=all` → no acknowledged data loss.
+
+### Delivery guarantees
+| Guarantee | How |
+|---|---|
+| At-most-once | Commit offset before processing (may lose) |
+| **At-least-once** (default) | Commit after processing (may duplicate → need idempotent consumer) |
+| Exactly-once (EOS) | Idempotent producer + transactions |
+
+### Producer essentials
+- `acks`: `0` fire-forget / `1` leader only / `all` safest. `enable.idempotence=true` → no duplicate writes on retry.
+- Batching (`linger.ms`, `batch.size`) + compression for throughput. **Key decides partition → ordering.**
+
+### Consumer essentials
+- **Pull-based;** commit offset manually after success. `auto.offset.reset`: `earliest` (replay all) / `latest` (only new).
+- **Rebalancing:** partitions reassigned when consumers join/leave (briefly pauses).
+
+### Retention & replay
+- Kept by **time** (`retention.ms`) or **size** (`retention.bytes`) — not deleted on read.
+- **Log compaction:** keeps latest value per key. **Replay** = seek to older offset/timestamp.
+
+### When to use / avoid
+- **Use:** event streaming, log aggregation, decoupling microservices, high throughput, replay/audit.
+- **Avoid:** simple request/response, small task queues (RabbitMQ/SQS), strict global ordering.
+
+### Kafka vs RabbitMQ
+| Kafka | RabbitMQ |
+|---|---|
+| Log retained, replayable | Message removed on ack |
+| Pull-based, consumer groups | Push-based, smart broker |
+| Huge throughput, ordered per partition | Flexible routing, lower throughput |
+
+**Golden rules:** Order **per-partition**. Parallelism = **partition count**. Default **at-least-once** → make consumers **idempotent**. Durability = **replication + `acks=all` + `min.insync.replicas`**.
+
+> Producer hashes key → picks partition → appends to that partition's log → each consumer group reads all partitions independently, splitting them among its consumers.
+
+>  Kafka is a replayable, partitioned commit log — producers hash a key to a partition, consumers read independently by offset, order holds only within a partition, and durability comes from replication with `acks=all` + `min.insync.replicas`. Because it defaults to at-least-once, correctness hinges on making consumers idempotent.
+
+---
+
+## Q: What if Kafka fails?
+
+Kafka survives most failures via **replication**; design clients to tolerate broker downtime.
+
+- **Broker dies:** new leader auto-elected from ISR. `replication.factor=3`, `min.insync.replicas=2`, `acks=all` → no acknowledged loss.
+- **Producer can't reach Kafka:** retries + `enable.idempotence=true`. Full outage → **Outbox pattern** (write event to DB in same txn, relay publishes later).
+- **Consumer crashes:** resumes from last committed **offset**; make consumers **idempotent** (at-least-once).
+- **Whole cluster down:** **multi-AZ/region** replication (MirrorMaker) + **backpressure** upstream.
+
+| Failure | Mitigation |
+|---|---|
+| Single broker | `replication.factor≥3`, `acks=all` |
+| Producer can't publish | Retries + idempotence, Outbox pattern |
+| Consumer crash | Resume from offset, idempotent consumer |
+| Full outage | Multi-AZ/region, Outbox in DB |
+
+**Rule:** Never assume Kafka is up. Decouple writes with the **Outbox pattern**, make consumers **idempotent**, tune **replication + acks**.
+
+>  Kafka tolerates most failures through partition replication and ISR-based leader election; the engineering job is to assume it can still go down — retry idempotently, decouple writes via the Outbox pattern, resume consumers from committed offsets, and replicate across AZs/regions.
+
+---
+
+## Q: How do consumers replay events using offsets to recover missed notifications?
+
+Kafka **keeps messages** (not deleted on read); permanent **offset** lets consumers rewind and reprocess.
+
+- **Why it works:** messages stay within the **retention window** (`retention.ms`); committed offset is just a bookmark.
+- **How:** seek to earlier offset — `seek()`, `seekToBeginning()`, by timestamp, or `--reset-offsets`. New group + `auto.offset.reset=earliest` re-reads whole topic.
+- **Safety:** replay can double-process → dedupe by unique key (`event_id`).
+- **Patterns:** Dead Letter Topic for failures; commit offset **only after** a successful send.
+
+**Rule:** Replay = **seek to offset** + **idempotent dedupe**.
+
+>  Because Kafka retains messages independently of consumption, recovery is just rewinding to an older offset and reprocessing; the only requirement is idempotent dedupe so replayed events don't produce duplicate side effects.
+
+---

@@ -222,13 +222,211 @@ Thread creation and destruction also have costs: stack allocation, runtime bookk
 
 ### User Threads vs Kernel Threads
 
-* Kernel threads are known and scheduled by the operating system
-* User-level threads are scheduled by a runtime in user space
-* Many runtimes map user tasks onto a smaller or equal number of kernel threads
+The central distinction is who controls scheduling:
 
-Python `threading.Thread` uses native operating-system threads in standard CPython. An `asyncio` task is different: it is a user-space coroutine scheduled cooperatively by an event loop, usually on one kernel thread.
+* Kernel or OS threads are known and scheduled by the operating system
+* User-level threads are scheduled by a language runtime or library in user space
+* A runtime can multiplex many user-level execution units over fewer OS threads
 
-The interview distinction is who controls scheduling. Kernel threads can be preempted by the OS. Coroutines normally yield at explicit suspension points such as `await`.
+Python `threading.Thread` uses native OS threads in standard CPython. The Python
+object is the language-level handle, but after `start()` it represents an
+OS-backed thread that the kernel can schedule independently.
+
+```text
+Application
+    |
+    +-- threading.Thread 1 --> OS thread 1 --> OS scheduler --> CPU core
+    +-- threading.Thread 2 --> OS thread 2 --> OS scheduler --> CPU core
+    +-- threading.Thread 3 --> OS thread 3 --> OS scheduler --> CPU core
+```
+
+Each OS thread has its own call stack, CPU register context, program counter,
+thread ID, thread-local storage, scheduling state, and kernel bookkeeping. These
+resources make creation and context switching more expensive than switching a
+user-space execution context.
+
+#### Thread Pools Use OS Threads
+
+A thread pool is not a new kind of thread. It is a resource-management pattern
+that creates a bounded set of OS-backed worker threads and reuses them for many
+tasks.
+
+```text
+Tasks --> bounded or unbounded queue --> worker OS threads --> CPU cores
+                                                                            |-> worker 1
+                                                                            |-> worker 2
+                                                                            |-> worker 3
+```
+
+Reusing workers avoids paying thread creation and destruction costs for every
+task. The pool also limits how many tasks can execute at once, although a fixed
+worker count alone does not provide backpressure if its task queue is unbounded.
+
+#### User-Level Threads
+
+A user-level thread is an execution unit managed primarily by a runtime rather
+than directly by the OS. The runtime selects which user-level thread runs on an
+underlying OS thread.
+
+```text
+OS-visible view:       OS thread 1         OS thread 2
+                                                     ^                   ^
+                                                     |                   |
+Runtime-visible view:  tasks A, B, C       tasks D, E, F
+```
+
+This arrangement supports large numbers of lightweight concurrent tasks while
+keeping the number of OS scheduling entities relatively small.
+
+The term *user thread* is ambiguous. It can mean an application-created native
+thread, such as `threading.Thread`, or a user-level thread scheduled by a
+runtime. In an interview, clarify which meaning is intended.
+
+#### Fibers
+
+A fiber is a lightweight, usually stackful, user-space execution context. The
+OS schedules the host OS thread, while a fiber scheduler chooses which fiber
+runs on that thread.
+
+```text
+OS scheduler
+        |
+        v
+OS thread
+        |
+        v
+Fiber scheduler
+        |-- Fiber A
+        |-- Fiber B
+        `-- Fiber C
+```
+
+Fibers are commonly cooperatively scheduled. A fiber keeps running until it
+yields, waits through a fiber-aware operation, or finishes. A CPU-heavy fiber
+that never yields can therefore starve other fibers assigned to the same OS
+thread.
+
+Boost.Fiber is an example of this model. It provides stackful fibers whose
+nested call stacks can suspend and later resume without requiring every caller
+to use `async` and `await`.
+
+#### Green Threads and Fibers
+
+Green thread is a broad term for a thread-like execution unit scheduled by a
+language runtime instead of directly by the kernel. Fiber usually describes a
+more specific mechanism: a lightweight, stackful execution context with
+cooperative suspension and resumption.
+
+The terminology is not standardized. A runtime may call similar concepts green
+threads, fibers, virtual threads, lightweight threads, tasks, or goroutines.
+Compare their documented scheduling, stack, blocking, and OS-thread mapping
+semantics rather than relying only on the name.
+
+| Property            | OS Thread                          | Fiber                                   |
+|---------------------|------------------------------------|-----------------------------------------|
+| Scheduler           | Operating-system kernel            | User-space runtime or library           |
+| Visible to OS       | Yes                                | Not as a separate scheduling entity     |
+| Stack               | Native thread stack                | Usually a smaller user-space stack      |
+| Kernel stack        | Separate kernel stack              | Uses the host OS thread's kernel stack  |
+| Context switching   | Kernel-managed                     | Usually user-space managed              |
+| Creation cost       | Relatively high                    | Relatively low                          |
+| Practical scale     | Lower                              | Potentially much higher                 |
+| CPU parallelism     | Yes, across cores                  | Only through multiple host OS threads   |
+| Typical scheduling  | Preemptive                         | Usually cooperative                     |
+| Blocking system call| Blocks that OS thread              | Blocks the host thread and its fibers   |
+
+Exact stack sizes and allocation strategies depend on the implementation. Some
+fiber runtimes use fixed-size stacks, while others reserve large virtual ranges
+or support segmented or dynamically growing stacks.
+
+#### Concurrency and Parallelism with Fibers
+
+Fibers increase concurrency by allowing many suspended operations to share a
+smaller number of OS threads. They do not create CPU parallelism by themselves.
+
+```text
+100,000 fibers
+             |
+             v
+100 OS threads
+             |
+             v
+Available CPU cores
+```
+
+At most one fiber executes on an OS thread at an instant. If 100 host threads
+are runnable, at most 100 fibers could execute simultaneously, and the actual
+limit is usually the number of available CPU cores and other runtime
+constraints.
+
+Runtimes use several mapping models:
+
+* N:1 maps many user-level threads or fibers to one OS thread. It provides
+    concurrency but no multicore parallelism
+* 1:1 maps each language-level thread to an OS thread. Standard CPython
+    `threading.Thread` uses this model
+* M:N multiplexes many user-level tasks over multiple OS threads. It can provide
+    lightweight concurrency and multicore parallelism
+
+#### Blocking Operations in Fibers
+
+The major fiber hazard is an operation that blocks the host OS thread. If Fiber
+A makes a traditional blocking system call, Fibers B and C cannot run on that
+same host thread until the call returns.
+
+```text
+Fiber A --> blocking I/O --> host OS thread blocks
+                                                            |
+                                                            `-- Fibers B and C cannot run here
+```
+
+The preferred flow uses non-blocking or fiber-aware I/O:
+
+```text
+Fiber A starts I/O --> operation is not ready --> Fiber A yields
+                                                                                            --> Fiber B runs
+I/O readiness event --> Fiber A becomes runnable --> Fiber A resumes
+```
+
+When a dependency exposes only blocking APIs, use one of these approaches:
+
+* Replace it with a non-blocking or fiber-aware API
+* Offload the blocking call to a dedicated OS-thread pool
+
+Offloading prevents the main fiber scheduler threads from blocking, but each
+active blocking operation still consumes a worker OS thread.
+
+#### Fiber Design Challenges
+
+* Blocking calls can stall every fiber assigned to the same host thread
+* Cooperative scheduling allows a non-yielding fiber to starve other fibers
+* Smaller stacks make deep recursion and large stack allocations riskier
+* Thread-local state may be incorrect when multiple fibers share one OS thread;
+    use fiber-local or context-local state when required
+* Debugging can be harder because execution moves among many logical contexts
+* Libraries and synchronization primitives must be compatible with the fiber
+    scheduler
+* CPU-bound work still needs multiple OS threads or processes for parallelism
+
+The complete scheduling hierarchy is:
+
+```text
+Application tasks
+     |
+     +-- Thread pool ----------> OS worker threads -------> OS scheduler
+     |
+     `-- Fiber runtime --------> fibers
+                                                                    |
+                                                                    `--> host OS threads --> OS scheduler
+                                                                                                                         |
+                                                                                                                         v
+                                                                                                                    CPU cores
+```
+
+The interview summary is: OS threads provide kernel-scheduled execution and
+multicore parallelism; pools reuse those threads; fibers and green threads
+provide cheaper user-space concurrency over them. Fiber scalability depends on
+yielding correctly and avoiding accidental host-thread blocking.
 
 ### Scheduling and Workload Type
 

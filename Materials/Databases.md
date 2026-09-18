@@ -252,6 +252,16 @@ CREATE INDEX idx_users_covering ON users (email) INCLUDE (name);
 SELECT name FROM users WHERE email = 'alice@example.com';
 ```
 
+### Heap, Clustered Index and Non-Clustered Index in SQL and Postgres
+
+A **heap in a database is simply an unordered collection of table rows stored in data pages**. It has nothing to do with the heap data structure used in algorithms. The rows are stored in pages without being organized according to a particular index key. Both PostgreSQL and SQL Server can use this kind of heap storage.
+
+In **PostgreSQL**, a normal table is stored as a heap, while indexes are separate structures. For example, a B-tree index contains entries that point to the physical location of rows in the heap. Therefore, an indexed query generally works like **B+ tree → heap page → actual row**. This can require an additional heap access, although PostgreSQL can sometimes avoid it using an **index-only scan**.
+
+In **SQL Server**, if a table has **no clustered index**, it is also a heap. A non-clustered index is a separate B+ tree whose entries point to rows in the heap. So the lookup is conceptually **non-clustered B+ tree → row locator → heap → actual row**.
+
+If a **clustered index** is created in SQL Server, the table is no longer a heap. Its data is organized as a **clustered B+ tree**, where the **leaf level contains the actual table rows**. Therefore, a lookup using the clustered key can go directly from **B+ tree → leaf page → actual row**, without a separate heap lookup. A primary key does not necessarily have to be clustered; it can be defined as either clustered or non-clustered.
+
 ---
 
 ## B-Trees & LSM Trees
@@ -499,6 +509,11 @@ These four properties define what "correct" means for a transaction:
 
 Not all applications need full isolation. Stronger isolation means more overhead (more locking, more aborts). SQL defines four levels:
 
+- **READ UNCOMMITTED** — A transaction may read changes made by another transaction before they are committed, so dirty reads, non-repeatable reads, and phantom reads are possible. It offers the weakest isolation and is rarely appropriate; use it only when approximate results are acceptable and maximum read throughput matters.
+- **READ COMMITTED** — Each statement sees only data committed before that statement began. It prevents dirty reads, but repeated reads in the same transaction can return different values or additional rows because other transactions may commit between statements. This is a common general-purpose default for OLTP applications.
+- **REPEATABLE READ** — Rows read by a transaction remain stable for its duration, usually through locks or a consistent MVCC snapshot. It prevents dirty and non-repeatable reads; phantom-read behavior varies by database implementation. Use it for multi-step logic that must repeatedly observe the same data.
+- **SERIALIZABLE** — The database guarantees a result equivalent to running concurrent transactions one at a time. It prevents dirty reads, non-repeatable reads, phantoms, and serialization anomalies, but may reduce concurrency through blocking or transaction aborts. Use it for correctness-critical operations such as bank transfers or seat reservations, and retry transactions that fail with serialization errors.
+
 | Level | Dirty Read | Non-Repeatable Read | Phantom Read | Lost Update | Performance |
 |---|---|---|---|---|---|
 | **Read Uncommitted** | ✅ possible | ✅ | ✅ | ✅ | Fastest |
@@ -564,6 +579,13 @@ Lock types:
 
 2PL guarantees serializability but has two major problems:
 1. **Deadlocks**: Transaction A holds lock on row 1, waits for lock on row 2. Transaction B holds lock on row 2, waits for lock on row 1. Neither can proceed. Solutions: deadlock detection (wait-for graph), timeouts, or prevention schemes (wound-wait, wait-die).
+    - Databases detect these cycles, typically using a wait-for graph, and abort one transaction to break the cycle.
+    - We prevent deadlocks by:
+        - Acquiring resources in a consistent global order
+        - Keeping transactions short
+        - Reducing unnecessary locking through appropriate indexes and isolation levels
+        - Avoiding holding locks during external operations
+        - Because deadlocks can still occur under concurrency, production applications should treat deadlock errors as transient and retry the transaction with bounded exponential backoff and jitter.
 2. **Low concurrency**: Readers block writers, writers block readers.
 
 **Multi-Version Concurrency Control (MVCC)** — the optimistic approach:
