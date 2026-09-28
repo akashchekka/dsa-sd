@@ -6,6 +6,7 @@
 - [B-Trees & LSM Trees](#b-trees--lsm-trees)
 - [Query Processing & Optimization](#query-processing--optimization)
 - [Transactions & Concurrency Control](#transactions--concurrency-control)
+- [Isolation Levels](#isolation-levels)
 - [Log-Structured Storage & WAL](#log-structured-storage--wal)
 - [Replication](#replication)
 - [Partitioning / Sharding](#partitioning--sharding)
@@ -505,13 +506,14 @@ These four properties define what "correct" means for a transaction:
 | **Isolation** | Concurrent transactions don't see each other's intermediate states. Each transaction behaves *as if* it were the only one running. | Locking protocols (2PL), multi-version concurrency control (MVCC), or serializable snapshot isolation (SSI). |
 | **Durability** | Once a transaction is committed, its changes survive any subsequent crash (power failure, disk failure, etc.). | WAL is flushed to disk (fsync) before reporting commit success. Replication adds another layer of durability. |
 
-### Isolation Levels
+## Isolation Levels
 
-Not all applications need full isolation. Stronger isolation means more overhead (more locking, more aborts). SQL defines four levels:
+Not all applications need full isolation. Stronger isolation means more overhead (more locking, more aborts). The SQL standard defines four levels, and many databases also offer SNAPSHOT isolation:
 
 - **READ UNCOMMITTED** — A transaction may read changes made by another transaction before they are committed, so dirty reads, non-repeatable reads, and phantom reads are possible. It offers the weakest isolation and is rarely appropriate; use it only when approximate results are acceptable and maximum read throughput matters.
 - **READ COMMITTED** — Each statement sees only data committed before that statement began. It prevents dirty reads, but repeated reads in the same transaction can return different values or additional rows because other transactions may commit between statements. This is a common general-purpose default for OLTP applications.
 - **REPEATABLE READ** — Rows read by a transaction remain stable for its duration, usually through locks or a consistent MVCC snapshot. It prevents dirty and non-repeatable reads; phantom-read behavior varies by database implementation. Use it for multi-step logic that must repeatedly observe the same data.
+- **SNAPSHOT** — The transaction reads from a consistent MVCC snapshot of committed data as of the moment it started, so readers never block writers and writers never block readers. It prevents dirty reads, non-repeatable reads, and phantoms. If two transactions update the same row, the second one to commit fails with an update conflict (first-committer-wins) and must be retried, which prevents lost updates. It still allows write skew, so it is not fully serializable. In SQL Server it requires `ALLOW_SNAPSHOT_ISOLATION ON` and costs tempdb version-store space. PostgreSQL's REPEATABLE READ and Oracle's SERIALIZABLE are actually snapshot isolation. Use it for long-running reports or read-heavy workloads that need a consistent view without blocking OLTP writes.
 - **SERIALIZABLE** — The database guarantees a result equivalent to running concurrent transactions one at a time. It prevents dirty reads, non-repeatable reads, phantoms, and serialization anomalies, but may reduce concurrency through blocking or transaction aborts. Use it for correctness-critical operations such as bank transfers or seat reservations, and retry transactions that fail with serialization errors.
 
 | Level | Dirty Read | Non-Repeatable Read | Phantom Read | Lost Update | Performance |
@@ -519,6 +521,7 @@ Not all applications need full isolation. Stronger isolation means more overhead
 | **Read Uncommitted** | ✅ possible | ✅ | ✅ | ✅ | Fastest |
 | **Read Committed** | ❌ prevented | ✅ | ✅ | ✅ | Good — default in PostgreSQL, Oracle |
 | **Repeatable Read** | ❌ | ❌ | ✅ (some DBs prevent) | ❌ | Moderate — default in MySQL/InnoDB |
+| **Snapshot** | ❌ | ❌ | ❌ | ❌ (update conflict aborts) | Good for reads — no read locks, but version-store overhead and retries; write skew still possible |
 | **Serializable** | ❌ | ❌ | ❌ | ❌ | Slowest |
 
 What each anomaly means, with concrete examples:
@@ -540,7 +543,7 @@ ROLLBACK;                           -- A rolled back; the 0 was never real
 
 **Phantom read**: Transaction B runs a range query, Transaction A inserts a new row that matches the range, Transaction B re-runs the query and sees a new row that wasn't there before.
 
-**Write skew**: The subtlest anomaly. Two transactions read overlapping data, make independent decisions, and write non-overlapping data, violating an application invariant. Only prevented at Serializable.
+**Write skew**: The subtlest anomaly. Two transactions read overlapping data, make independent decisions, and write non-overlapping data, violating an application invariant. Only prevented at Serializable; Snapshot isolation still allows it because the two transactions write different rows, so no update conflict is detected.
 
 ```sql
 -- Example: Hospital requires at least 1 doctor on-call
@@ -572,6 +575,20 @@ never release any                never acquire new ones
                   Lock Point
                   (all locks held)
 ```
+
+### Read behavior
+                    SELECT
+                      │
+        ┌─────────────┴─────────────┐
+        │                           │
+   Lock-based                  Version-based
+        │                           │
+ READ UNCOMMITTED            RCSI / SNAPSHOT
+ READ COMMITTED
+ REPEATABLE READ
+ SERIALIZABLE
+
+> READ COMMITTED + RCSI enabled changes normal reads from locking to row-versioning.
 
 Lock types:
 - **Shared (S) lock**: For reads. Multiple transactions can hold shared locks on the same resource.

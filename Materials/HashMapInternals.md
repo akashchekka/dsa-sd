@@ -1078,14 +1078,6 @@ The side-by-side comparison below highlights the trade-offs among Java, C#, and 
 
 ## 27. The Most Important Memory Insight
 
-A common misconception is:
-
-> "C# doesn't use the heap for dictionary entries."
-
-Incorrect.
-
-The better model is:
-
 ```text
 C# Dictionary
 
