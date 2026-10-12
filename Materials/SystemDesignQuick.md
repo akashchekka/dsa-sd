@@ -968,3 +968,53 @@ Kafka **keeps messages** (not deleted on read); permanent **offset** lets consum
 >  Because Kafka retains messages independently of consumption, recovery is just rewinding to an older offset and reprocessing; the only requirement is idempotent dedupe so replayed events don't produce duplicate side effects.
 
 ---
+
+## Q: Websockets and webRTC are connection heavy. They need long lived connections and are costlyif there are billions of users in stream or chat. How to accommodate connections for large scale
+
+Idle connections are cheap; activity and handshakes are expensive. So I only keep connections for users who are actively interacting, multiplexed to one per device. Read-only and video audiences go over cacheable HTTP via CDN, and background devices use OS push. Gateways are event-driven, hold minimal state, run at about 500K–1M connections per box, and terminate at the edge with fan-in to the core. WebRTC is reserved for the small interactive stage, which I scale with cascaded SFUs and simulcast. Operationally, I balance by connection count, drain with jitter, and protect against reconnect storms with backoff, admission control, and resume tokens.
+
+Like a WebSocket, a WebRTC connection is long-lived and stateful, but it's never idle. Each viewer receives hundreds of separately encrypted packets per second, and the server runs a feedback loop per viewer for losses, speed, and quality, all under millisecond deadlines. None of it can be cached, so every byte comes from your own media servers. That's why WebRTC costs CPU and bandwidth per viewer, while an idle chat WebSocket mostly costs memory.
+
+---
+
+## Q: How do you design Redis cache key?
+
+### 1. Designing a Redis cache key
+
+A good cache key should be **deterministic, unique, and contain every input that can change the response**, while avoiding unnecessary inputs that reduce the hit rate. For example, `product:v1:tenant123:category=shoes:sort=price:page=2`. Include security/data boundaries such as tenant, user, role, locale, currency, API version, filters, and pagination when they affect the response. If you miss a required dimension, you can return **incorrect or even unauthorized data**; if you include unnecessary dimensions such as a random request ID, you get a very low cache hit rate.
+
+### 2. Cache invalidation
+
+For an individual object, you can directly invalidate its key, e.g. `product:123`. The harder case is when that product appears in many cached lists such as `products:shoes:page1`, `products:sale:page1`, etc. Common approaches are **tags/dependency mappings**, where lists are associated with the objects they contain and updating `product:123` invalidates all related caches; or **versioned keys**, where a list uses something like `products:v5:shoes:page1`, and changing the version makes all old entries effectively obsolete. If slight staleness is acceptable, a short TTL is another simpler option.
+
+### 3. Cache stampede
+
+A **cache stampede** happens when a very popular key expires and thousands of requests simultaneously miss the cache and hit the DB. One solution is **request coalescing/single-flight**: only one request regenerates the value while the others wait. A distributed Redis lock can implement this across multiple application instances. Importantly, the lock is a **separate Redis key**; setting `lock:product:123` does NOT prevent `GET product:123`. The application must explicitly respect the lock.
+
+```text
+if cache miss:
+    acquire lock(key)
+
+    check cache again
+
+    if still missing:
+        fetch DB
+        populate cache
+
+    release lock
+```
+
+### 4. How the Redis lock works
+
+For example, the application can use `SET lock:product:123 <unique-id> NX EX 10`. `NX` means only one request can successfully create the lock, while `EX 10` provides automatic expiry if the owner crashes. Other requests also see the cache miss and attempt the lock, but **fail if another request already holds it**. They should then wait/retry and check the cache again rather than querying the DB.
+
+```text
+Request A → cache miss → acquire lock → SUCCESS → DB → cache → release
+Request B → cache miss → acquire lock → FAIL → wait → cache HIT
+Request C → cache miss → acquire lock → FAIL → wait → cache HIT
+```
+
+### 5. Additional stampede protection
+
+A lock protects a specific regeneration event, while **TTL jitter** prevents many keys from expiring simultaneously—for example, `10 min + random(0–60 sec)`. For extremely hot keys, **early refresh/probabilistic refresh** can refresh the value before it expires. A strong senior-level answer is: **design keys for correctness and security, use direct invalidation/tags/versioning for dependent data, and use request coalescing/locks + TTL jitter/early refresh to protect the backend from cache stampedes.**
+
